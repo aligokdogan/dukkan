@@ -632,14 +632,6 @@ const Yerel = {
     return { cari: veri.cariler.length, urun: veri.urunler.length };
   },
 
-  async hepsiniSil() {
-    await veriYukle();
-    const dukkan = veri.ayarlar.dukkan_adi;
-    veri = bosVeri();
-    veri.ayarlar.dukkan_adi = dukkan;
-    await veriKaydet();
-  },
-
   async kritikSayisi() {
     await veriYukle();
     return veri.urunler.filter(kritikMi).length;

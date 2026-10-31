@@ -156,7 +156,7 @@ dialog .dugmeler { display: flex; gap: 8px; justify-content: flex-end; margin-to
 @media (min-width: 721px) { .kareler { grid-template-columns: repeat(3, 1fr); } .kare { aspect-ratio: 1 / 0.6; } }
 .bakiye-kart {
   display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 14px; border-radius: 16px; overflow: hidden;
-  background: linear-gradient(135deg, #1f4e79, #2c6aa0); color: #fff; box-shadow: 0 4px 14px rgba(31,78,121,.3);
+  background: linear-gradient(135deg, var(--ana), var(--ana-2, #2c6aa0)); color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.2);
 }
 .bakiye { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; color: #fff; text-decoration: none; }
 .bakiye + .bakiye { border-left: 1px solid rgba(255,255,255,.2); }
@@ -165,3 +165,43 @@ dialog .dugmeler { display: flex; gap: 8px; justify-content: flex-end; margin-to
 .bakiye b { font-size: 22px; letter-spacing: -.3px; white-space: nowrap; }
 .bakiye-alt { font-size: 11px; opacity: .65; }
 @media (max-width: 360px) { .bakiye b { font-size: 18px; } }
+
+/* Temalar */
+.temalar { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+@media (min-width: 721px) { .temalar { grid-template-columns: repeat(4, 1fr); } }
+.tema-sec {
+  display: flex; align-items: center; gap: 10px; background: var(--kart); color: inherit; border: 2px solid var(--cizgi);
+  font-weight: 600; text-align: left; padding: 10px;
+}
+.tema-sec.aktif { border-color: var(--ana); box-shadow: 0 0 0 2px var(--ana-acik); }
+.tema-ornek { width: 32px; height: 32px; border-radius: 50%; flex: none; border: 1px solid rgba(0,0,0,.15); }
+
+[data-tema="sari-lacivert"] { --ana: #0b2550; --ana-2: #17407f; --ana-acik: #fff6c2; --sari: #ffd400; }
+[data-tema="sari-lacivert"] .ust { border-bottom: 4px solid var(--sari); }
+[data-tema="sari-lacivert"] .logo { color: var(--sari); }
+[data-tema="sari-lacivert"] .bakiye b { color: var(--sari); }
+[data-tema="sari-lacivert"] .bakiye-kart { border-bottom: 4px solid var(--sari); }
+[data-tema="sari-lacivert"] .kare:nth-child(odd) { background: var(--ana); color: var(--sari); }
+[data-tema="sari-lacivert"] .kare:nth-child(even) { background: var(--sari); color: var(--ana); }
+[data-tema="sari-lacivert"] button.ikincil, [data-tema="sari-lacivert"] .dugme.ikincil { color: var(--ana); }
+
+[data-tema="yesil"] { --ana: #14532d; --ana-2: #1f7a45; --ana-acik: #dcfce7; }
+
+[data-tema="gece"] {
+  --ana: #1e293b; --ana-2: #334155; --ana-acik: #334155; --zemin: #0b1120; --kart: #172033; --cizgi: #2a3650; --gri: #94a3b8;
+  color-scheme: dark;
+}
+[data-tema="gece"] body { color: #e2e8f0; }
+[data-tema="gece"] label { color: #cbd5e1; }
+[data-tema="gece"] input, [data-tema="gece"] select, [data-tema="gece"] textarea { background: #0f172a; color: #e2e8f0; border-color: #334155; }
+[data-tema="gece"] button.ikincil, [data-tema="gece"] .dugme.ikincil { color: #e2e8f0; }
+[data-tema="gece"] .sekme { background: #0f172a; }
+[data-tema="gece"] .sekme a { color: #94a3b8; }
+[data-tema="gece"] .sekme a.aktif { background: var(--ana-2); color: #fff; }
+[data-tema="gece"] a { color: #93c5fd; }
+[data-tema="gece"] .ust a, [data-tema="gece"] .kare, [data-tema="gece"] .bakiye, [data-tema="gece"] a.dugme:not(.ikincil) { color: #fff; }
+[data-tema="gece"] .rozet { background: #334155; color: #e2e8f0; }
+[data-tema="gece"] tr.tikla:hover { background: #1e293b; }
+[data-tema="gece"] dialog { background: var(--kart); color: #e2e8f0; }
+[data-tema="gece"] h1, [data-tema="gece"] h2, [data-tema="gece"] b { color: #f1f5f9; }
+[data-tema="gece"] .tema-sec.aktif { border-color: #93c5fd; }

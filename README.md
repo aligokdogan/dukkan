@@ -39,3 +39,8 @@ Uygulama 7 günden eski yedek için Özet ekranında hatırlatır.
 ## Güncelleme yayınlarken
 
 `sw.js` içindeki `SURUM` değerini artırın ki telefonlar yeni dosyaları alsın.
+
+## Tema
+
+Ayarlar → **Tema**: Klasik mavi, Sarı-Lacivert, Yeşil, Gece (koyu). Seçim telefonda saklanır.
+"Örnek verileri yükle" sadece uygulama boşken görünür; toplu silme düğmesi yoktur.

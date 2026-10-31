@@ -10,6 +10,22 @@ const sayi = n => new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 }).f
 const tarihYaz = t => (t ? t.slice(0, 10).split('-').reverse().join('.') : '');
 const bugun = () => new Date().toLocaleDateString('sv-SE');
 
+// ---------- Tema ----------
+
+const TEMALAR = [
+  { ad: 'klasik', baslik: 'Klasik mavi', renkler: ['#1f4e79', '#e8f0f8'] },
+  { ad: 'sari-lacivert', baslik: 'Sarı-Lacivert', renkler: ['#0b2550', '#ffd400'] },
+  { ad: 'yesil', baslik: 'Yeşil', renkler: ['#14532d', '#dcfce7'] },
+  { ad: 'gece', baslik: 'Gece (koyu)', renkler: ['#0f172a', '#334155'] },
+];
+
+function temaUygula(ad) {
+  const tema = TEMALAR.find(t => t.ad === ad) || TEMALAR[0];
+  document.documentElement.dataset.tema = tema.ad;
+  document.querySelector('meta[name="theme-color"]').content = tema.renkler[0];
+}
+temaUygula(localStorage.getItem('tema'));
+
 function api(yol, secenek = {}) {
   return Yerel.api(yol, secenek);
 }
@@ -1386,7 +1402,9 @@ async function sepetSayfasi(mod) {
 // ---------- Ayarlar ----------
 
 async function ayarlarSayfasi() {
-  const [a, kayitlar] = await Promise.all([api('/ayarlar'), api('/bildirimler')]);
+  const [a, kayitlar, ozet] = await Promise.all([api('/ayarlar'), api('/bildirimler'), api('/ozet')]);
+  const bos = ozet.sayilar.cari + ozet.sayilar.urun === 0;
+  const aktifTema = document.documentElement.dataset.tema;
   const izin = bildirimDestekli ? Notification.permission : 'yok';
   icerik.innerHTML = `
     <h1>Ayarlar</h1>
@@ -1401,6 +1419,11 @@ async function ayarlarSayfasi() {
           : iphone && !uygulamaModu
             ? "<p>iPhone'da bildirim için önce Safari'de <b>Paylaş → Ana Ekrana Ekle</b> ile uygulamayı yükleyin, ana ekrandaki simgeden açıp buraya gelin.</p>"
             : '<button class="yesil" id="bildirimAc">🔔 Bildirimleri aç</button>'}
+    </div>
+
+    <div class="kart"><h2>🎨 Tema</h2>
+      <div class="temalar">${TEMALAR.map(t => `<button type="button" class="tema-sec ${t.ad === aktifTema ? 'aktif' : ''}" data-tema="${t.ad}">
+        <span class="tema-ornek" style="background:linear-gradient(135deg, ${t.renkler[0]} 50%, ${t.renkler[1]} 50%)"></span>${t.baslik}</button>`).join('')}</div>
     </div>
 
     <form class="kart" id="ayarForm">
@@ -1425,12 +1448,10 @@ async function ayarlarSayfasi() {
       </div>
     </div>
 
-    <div class="kart"><h2>🧪 Deneme verileri</h2>
-      <p class="kucuk-yazi">Uygulamayı denemek için örnek cariler, ürünler ve satışlar yükler. Mevcut verilerin yerine geçer.
-      Gerçek kullanıma başlarken "Tüm verileri sil" ile temizleyin.</p>
-      <div class="arac"><button class="ikincil" id="ornekYukle">Örnek verileri yükle</button>
-      <button class="kirmizi" id="hepsiniSil">Tüm verileri sil</button></div>
-    </div>
+    ${bos ? `<div class="kart"><h2>🧪 Deneme verileri</h2>
+      <p class="kucuk-yazi">Uygulamayı denemek için örnek cariler, ürünler ve satışlar yükler. Bu düğme sadece uygulama boşken görünür.</p>
+      <div class="arac"><button class="ikincil" id="ornekYukle">Örnek verileri yükle</button></div>
+    </div>` : ''}
 
     <div class="kart"><h2>Son uyarılar</h2>
       ${kayitlar.length ? `<ul class="liste">${kayitlar.map(k => `<li><div>${esc(k.mesaj)}<br><span class="kucuk-yazi">${esc(k.tarih)}</span></div></li>`).join('')}</ul>`
@@ -1452,16 +1473,15 @@ async function ayarlarSayfasi() {
     bildir('Kaydedildi');
   };
   $('#yedekAl').onclick = () => yedekAl().then(() => setTimeout(yonlendir, 800));
-  $('#ornekYukle').onclick = async () => {
-    if (!onayla('Örnek veriler yüklensin mi? Bu telefondaki mevcut kayıtlar silinip yerine örnekler gelecek.')) return;
+  icerik.querySelectorAll('.tema-sec').forEach(b => (b.onclick = () => {
+    localStorage.setItem('tema', b.dataset.tema);
+    temaUygula(b.dataset.tema);
+    icerik.querySelectorAll('.tema-sec').forEach(x => x.classList.toggle('aktif', x === b));
+  }));
+  if ($('#ornekYukle')) $('#ornekYukle').onclick = async () => {
+    if (!onayla('Örnek veriler yüklensin mi?')) return;
     const r = await Yerel.ornekYukle();
     bildir(`Örnek veriler yüklendi: ${r.cari} cari, ${r.urun} ürün`);
-    location.hash = '#/';
-  };
-  $('#hepsiniSil').onclick = async () => {
-    if (!onayla('TÜM cariler, ürünler ve hareketler silinsin mi? Bu geri alınamaz.')) return;
-    await Yerel.hepsiniSil();
-    bildir('Tüm veriler silindi');
     location.hash = '#/';
   };
   $('#yedekDosya').onchange = async e => {
