@@ -1141,6 +1141,16 @@ function pdfPaylas(belge, ayar) {
   return dosyaVer(ad, pdfOlustur(belge, ayar), 'application/pdf');
 }
 
+// PDF'in yazı hali: kişinin WhatsApp sohbetine direkt gönderilebilsin diye
+function belgeMetni(b, ayar) {
+  const baslik = { teklif: 'Fiyat teklifi', satis: 'Satış fişi', siparis: 'Sipariş' }[b.tur];
+  return `${ayar.dukkan_adi || ''} - ${baslik} #${b.no} (${tarihYaz(b.tarih)})\n\n` +
+    b.kalemler.map(k => `• ${k.ad}: ${sayi(k.miktar)} ${k.birim} x ${para(k.fiyat)} = ${para(k.tutar)}`).join('\n') +
+    `\n\nToplam: ${para(b.toplam)}` +
+    (b.tur === 'teklif' ? `\nGeçerlilik: ${b.gecerlilik} gün` : b.odeme === 'veresiye' ? '\nÖdeme: hesabınıza yazıldı' : '') +
+    (b.aciklama ? `\nNot: ${b.aciklama}` : '') + (ayar.pdf_notu ? `\n${ayar.pdf_notu}` : '') + '\n\nTeşekkür ederiz.';
+}
+
 function belgeKarti(belge, ayar, ustMetin) {
   const p = $('#pencere');
   // Önce kritik stok uyarısı açıksa o kapanınca göster
@@ -1154,7 +1164,9 @@ function belgeKarti(belge, ayar, ustMetin) {
   f.innerHTML = `<h2>${ustMetin}</h2>
     <p><b>${esc(belge.musteri)}</b> · ${belge.kalemler.length} kalem · <b>${para(belge.toplam)}</b></p>
     <button type="button" class="yesil" id="pdfGonder" style="width:100%;padding:14px">📄 PDF olarak WhatsApp'tan gönder</button>
-    <p class="kucuk-yazi">Açılan menüden WhatsApp'ı, sonra kişiyi seçin.</p>
+    <p class="kucuk-yazi">Açılan menüden WhatsApp'ı, sonra kişiyi seçin. Daha önce yazıştığınız kişiler menünün en üstünde çıkar.</p>
+    ${belge.telefon ? `<a class="dugme ikincil" style="width:100%" target="_blank" rel="noopener" href="${esc(waAdresi(belge.telefon, belgeMetni(belge, ayar)))}">💬 ${esc(belge.musteri)} ile WhatsApp'ta yazı olarak gönder</a>
+    <p class="kucuk-yazi">Bu, kişinin sohbetini direkt açar ama PDF eklenemez, liste yazı olarak gider.</p>` : ''}
     <div class="dugmeler">${teklif && !belge.satis_no ? '<button type="button" class="ikincil" id="satisaCevir">Satışa çevir</button>' : ''}
       <button type="button" class="ikincil" data-kapat>Kapat</button></div>`;
   f.onsubmit = e => e.preventDefault();
