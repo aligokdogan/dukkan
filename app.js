@@ -107,7 +107,7 @@ function alanHtml(a) {
   const sinif = a.tam ? ' class="tam"' : '';
   const ortak = `name="${a.ad}" ${a.gerekli ? 'required' : ''}`;
   if (a.tip === 'secim') {
-    return `<label${sinif}>${esc(a.etiket)}<select ${ortak}>${a.secenekler.map(([d, e]) =>
+    return `<label${sinif}>${esc(a.etiket)}<select ${ortak} ${a.aramali ? 'class="aramali"' : ''}>${a.secenekler.map(([d, e]) =>
       `<option value="${esc(d)}" ${String(d) === String(a.deger ?? '') ? 'selected' : ''}>${esc(e)}</option>`).join('')}</select></label>`;
   }
   if (a.tip === 'metin-alani') return `<label${sinif}>${esc(a.etiket)}<textarea ${ortak}>${esc(a.deger)}</textarea></label>`;
@@ -121,6 +121,55 @@ function alanHtml(a) {
   return `<label${sinif}>${esc(a.etiket)}<input type="${tip}" ${ortak} ${liste} value="${esc(a.deger)}" ${a.ipucu ? `placeholder="${esc(a.ipucu)}"` : ''}>
     ${a.oneriler ? `<datalist id="liste-${a.ad}">${a.oneriler.map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : ''}</label>`;
 }
+
+// Uzun açılır listeler (class="aramali"): yerine yazdıkça süzülen bir kutu konur.
+// Asıl <select> gizli kalır; seçim ona yazılır ve 'change' tetiklenir, böylece sayfa kodu değişmez.
+function aramaliYap(sec) {
+  if (sec.dataset.aramali) return;
+  sec.dataset.aramali = '1';
+  sec.hidden = true;
+  const kutu = document.createElement('div');
+  kutu.className = 'aramali-kutu';
+  kutu.innerHTML = `<input type="text" enterkeyhint="search" autocomplete="off" placeholder="Yazarak arayın…"><ul class="aramali-liste" hidden></ul>`;
+  sec.after(kutu);
+  const giris = kutu.querySelector('input');
+  const liste = kutu.querySelector('ul');
+  const seciliMetin = () => (sec.selectedOptions[0] && sec.value ? sec.selectedOptions[0].textContent : '');
+  const bosMetin = () => (sec.options[0] && !sec.options[0].value ? sec.options[0].textContent : '');
+  const goster = () => { giris.value = seciliMetin(); giris.placeholder = bosMetin() || 'Yazarak arayın…'; };
+  let ilk = null;
+  const ciz = () => {
+    const ara = aramaMetni(giris.value.trim());
+    const uyan = [...sec.options].filter(o => !ara || aramaMetni(o.textContent).includes(ara));
+    ilk = uyan[0] || null;
+    liste.innerHTML = uyan.length ? uyan.slice(0, 50).map(o =>
+      `<li data-deger="${esc(o.value)}" class="${o.value === sec.value ? 'secili' : ''}">${esc(o.textContent)}</li>`).join('')
+      : '<li class="yok">Bulunamadı</li>';
+    liste.hidden = false;
+  };
+  const sec_ = deger => {
+    sec.value = deger;
+    sec.dispatchEvent(new Event('change', { bubbles: true }));
+    goster();
+    liste.hidden = true;
+    giris.blur();
+  };
+  giris.onfocus = () => { giris.value = ''; ciz(); };
+  giris.oninput = ciz;
+  giris.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); if (ilk) sec_(ilk.value); } };
+  // pointerdown: input blur olmadan önce seçimi yakala
+  liste.onpointerdown = e => {
+    const li = e.target.closest('li[data-deger]');
+    if (!li) return;
+    e.preventDefault();
+    sec_(li.dataset.deger);
+  };
+  giris.onblur = () => setTimeout(() => { liste.hidden = true; goster(); }, 150);
+  sec.addEventListener('change', goster);
+  goster();
+}
+new MutationObserver(() => document.querySelectorAll('select.aramali:not([data-aramali])').forEach(aramaliYap))
+  .observe(document.body, { childList: true, subtree: true });
 
 function onayla(mesaj) {
   return window.confirm(mesaj);
@@ -485,7 +534,7 @@ async function stokSayfasi() {
     <div class="arac"><button class="ikincil" id="barkodBul">📷 Barkodla bul</button><a class="dugme ikincil" href="#/sayim">🔢 Sayım yap</a></div>
     <div class="sekme">${[['', 'Hepsi'], ['otomobil', '🚗 Otomobil'], ['traktor', '🚜 Traktör']].map(([k, ad]) =>
       `<a href="#" data-arac="${k}">${ad}</a>`).join('')}</div>
-    <select id="grupFiltre" style="margin-bottom:12px"><option value="">📂 Tüm gruplar</option>${gruplar.map(g => `<option ${g === seciliGrup ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
+    <select id="grupFiltre" class="aramali"><option value="">📂 Tüm gruplar</option>${gruplar.map(g => `<option ${g === seciliGrup ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
     <div class="arac">
       <input type="search" id="urunAra" placeholder="Ürün adı, kod, marka veya raf ara…">
       <label class="yatay" style="margin:0"><input type="checkbox" id="kritikFiltre" ${sadeceKritik ? 'checked' : ''}> Sadece kritik</label>
@@ -612,7 +661,7 @@ async function urunSayfasi(id) {
     ] : [
       { ad: 'miktar', etiket: `Miktar (${u.birim})`, tip: 'sayi', gerekli: true },
       { ad: 'birim_fiyat', etiket: 'Birim fiyat (₺)', tip: 'sayi', deger: (tip === 'giris' ? u.alis_fiyat : u.satis_fiyat) || '' },
-      { ad: 'cari_id', etiket: tip === 'giris' ? 'Tedarikçi' : 'Müşteri', tip: 'secim', secenekler: cariSecenek(tip === 'giris' ? 'tedarikci' : 'musteri'), tam: true },
+      { ad: 'cari_id', etiket: tip === 'giris' ? 'Tedarikçi' : 'Müşteri', tip: 'secim', aramali: true, secenekler: cariSecenek(tip === 'giris' ? 'tedarikci' : 'musteri'), tam: true },
       { ad: 'cariye_yaz', etiket: tip === 'giris' ? 'Tutarı tedarikçinin hesabına yaz (borcumuz olarak)' : 'Tutarı müşterinin hesabına yaz (veresiye)', tip: 'onay', deger: true },
       { ad: 'tarih', etiket: 'Tarih', tip: 'date', deger: bugun() },
       { ad: 'aciklama', etiket: 'Açıklama', ipucu: 'Örn: Fatura no' },
@@ -779,7 +828,7 @@ async function bilinmeyenBarkod(kod, sonra) {
     <div class="arac" style="flex-direction:column;align-items:stretch">
       <button type="button" id="bbYeni">+ Yeni ürün olarak ekle</button>
       <label style="margin:8px 0 0">veya mevcut bir ürüne bağla
-        <select id="bbSec"><option value="">— Ürün seçin —</option>${urunler.filter(u => !u.barkod).map(u =>
+        <select id="bbSec" class="aramali"><option value="">— Ürün seçin —</option>${urunler.filter(u => !u.barkod).map(u =>
           `<option value="${u.id}">${esc(u.ad)}${u.kod ? ' (' + esc(u.kod) + ')' : ''}</option>`).join('')}</select></label>
       <button type="button" class="ikincil" id="bbBagla">Seçili ürüne bağla</button>
     </div>
@@ -949,7 +998,7 @@ async function siparisSayfasi(cariId) {
   icerik.innerHTML = `
     ${alisSekmeleri('siparis')}
     <div class="kart">
-      <label>Tedarikçi<select id="sTedarikci">${tedarikciler.map(t =>
+      <label>Tedarikçi<select id="sTedarikci" class="aramali">${tedarikciler.map(t =>
         `<option value="${t.id}" ${t.id === secili ? 'selected' : ''}>${esc(t.ad)}${t.telefon ? '' : ' (telefon yok)'}</option>`).join('')}</select></label>
       <div class="arac" style="margin:0"><input type="search" id="sAra" placeholder="Ürün ara…"><button class="ikincil" id="sBarkod">📷 Barkod</button></div>
     </div>
@@ -1316,7 +1365,7 @@ async function sepetSayfasi(mod) {
       <p class="kucuk-yazi" style="margin:4px 0 0">Kaydedince eski kaydın yerine geçer${mod === 'teklif' ? '' : ', stok ve hesaplar buna göre düzelir'}.</p>
       <button class="metin" id="sBelgeSil" style="padding:8px 0 0">🗑 Bu ${{ satis: 'fişi', teklif: 'teklifi', alis: 'alımı' }[mod]} tamamen sil</button></div>` : ''}
     <div class="kart">
-      <label>${alisModu ? 'Tedarikçi' : 'Müşteri'}<select id="sMusteri"><option value="">${{ satis: '— Perakende (müşterisiz) —', teklif: '— Listede yok, adını yazacağım —', alis: '— Tedarikçisiz (sadece stoğa ekle) —' }[mod]}</option>
+      <label>${alisModu ? 'Tedarikçi' : 'Müşteri'}<select id="sMusteri" class="aramali"><option value="">${{ satis: '— Perakende (müşterisiz) —', teklif: '— Listede yok, adını yazacağım —', alis: '— Tedarikçisiz (sadece stoğa ekle) —' }[mod]}</option>
         ${musteriler.map(c => `<option value="${c.id}" ${String(c.id) === String(sepet.cari_id) ? 'selected' : ''}>${esc(c.ad)}${c.tur !== anaTur ? (c.tur === 'tedarikci' ? ' (tedarikçi)' : ' (müşteri)') : ''}</option>`).join('')}</select></label>
       ${mod !== 'teklif' ? '' : `<label id="sMusteriAdiKutu">Müşteri adı<input id="sMusteriAdi" value="${esc(sepet.musteri)}" placeholder="Örn: Ahmet Bey (Doblo)"></label>`}
       <div class="arac" style="margin:0"><input type="search" id="sUrunAra" placeholder="Ürün ekle: ad, kod veya marka"><button class="ikincil" id="sBarkodOku">📷 Barkod</button></div>

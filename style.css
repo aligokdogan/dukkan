@@ -209,3 +209,18 @@ dialog .dugmeler { display: flex; gap: 8px; justify-content: flex-end; margin-to
 .duzenleme-kart { border-left: 4px solid var(--turuncu); background: #fff8f1; }
 [data-tema="gece"] .duzenleme-kart { background: #2a2116; }
 .kucuk-sekme a { padding: 7px 4px; font-size: 14px; }
+
+/* Yazdıkça süzülen seçim kutusu */
+.aramali-kutu { position: relative; margin-top: 4px; margin-bottom: 12px; }
+label .aramali-kutu { margin-bottom: 0; }
+.aramali-kutu input { background: var(--kart); padding-right: 32px; }
+.aramali-kutu::after { content: '⌄'; position: absolute; right: 12px; top: 8px; color: var(--gri); pointer-events: none; font-size: 18px; }
+.aramali-liste {
+  list-style: none; margin: 4px 0 0; padding: 4px; max-height: 280px; overflow-y: auto;
+  background: var(--kart); border: 1px solid var(--cizgi); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.12);
+}
+.aramali-liste li { padding: 11px 10px; border-radius: 8px; cursor: pointer; font-size: 16px; color: inherit; }
+.aramali-liste li:active, .aramali-liste li:hover { background: var(--ana-acik); }
+.aramali-liste li.secili { font-weight: 700; color: var(--ana); }
+.aramali-liste li.yok { color: var(--gri); cursor: default; }
+[data-tema="gece"] .aramali-liste li.secili { color: #93c5fd; }
