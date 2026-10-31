@@ -1,11 +1,13 @@
 // Uygulama dosyalarını telefonda saklar: internet olmadan da açılır.
 // Yeni sürüm yayınlanınca SURUM değiştirilir.
-const SURUM = 'dukkan-v2';
+const SURUM = 'dukkan-v3';
 const DOSYALAR = ['./', 'index.html', 'app.js', 'veri.js', 'style.css', 'manifest.json',
   'ikon/ikon-192.png', 'ikon/ikon-512.png', 'ikon/apple-touch-icon.png', 'ikon/ikon.svg'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(SURUM).then(c => c.addAll(DOSYALAR)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(SURUM)
+    .then(c => c.addAll(DOSYALAR.map(d => new Request(d, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -17,8 +19,9 @@ self.addEventListener('activate', e => {
 // Önce ağ (güncelleme varsa gelsin), ağ yoksa telefondaki kopya.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
+  // no-cache: tarayıcının kendi önbelleğini atla, yeni sürüm hemen gelsin
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then(yanit => {
         if (yanit.ok) {
           const kopya = yanit.clone();
