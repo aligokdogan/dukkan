@@ -190,7 +190,8 @@ Yerel.kritikUyariAyarla(async (urunler, metin) => {
   await telefonBildirimi(baslik, metin.split('\n\n')[1] || metin, adres).catch(() => {});
   if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
   const p = $('#pencere');
-  if (p.open) p.close();
+  // Başka bir pencere açıksa (ör. satış fişi) onu kapatma, kapanınca göster
+  if (p.open) await new Promise(coz => p.addEventListener('close', () => setTimeout(coz, 50), { once: true }));
   const f = $('#pencereForm');
   f.innerHTML = `<h2 class="negatif">⚠️ ${esc(baslik)}</h2>
     <ul class="liste">${urunler.map(u => `<li><b>${esc(u.ad)}</b><span class="negatif"><b>${sayi(u.stok)}</b> ${esc(u.birim)} kaldı</span></li>`).join('')}</ul>
@@ -214,11 +215,13 @@ const sayfalar = {
   ayarlar: ayarlarSayfasi,
   siparis: siparisSayfasi,
   sayim: sayimSayfasi,
+  satis: satisSayfasi,
+  teklif: teklifSayfasi,
 };
 
 async function yonlendir() {
   const [, ad = '', id] = location.hash.replace(/^#/, '').split('/');
-  const aktif = { '': 'ozet', cari: 'cariler', urun: 'stok', siparis: 'stok', sayim: 'stok' }[ad] || ad;
+  const aktif = { '': 'ozet', cari: 'cariler', urun: 'stok', siparis: 'stok', sayim: 'stok', teklif: 'satis' }[ad] || ad;
   document.querySelectorAll('[data-sayfa]').forEach(a => a.classList.toggle('aktif', a.dataset.sayfa === aktif));
   try {
     await (sayfalar[ad] || ozetSayfasi)(id);
@@ -615,6 +618,7 @@ async function barkodTarayici({ baslik = 'Barkodu okutun', onKod, onKapat }) {
   const d = $('#tarayici');
   const video = $('#tarayiciVideo');
   $('#tarayiciBaslik').textContent = baslik;
+  $('#tarayiciKod').placeholder = 'Okumuyorsa barkodu / kodu yazın';
   const son = $('#tarayiciSon');
   son.textContent = 'Kamera açılıyor…';
   son.className = 'tarayici-son';
@@ -685,8 +689,8 @@ async function barkodTarayici({ baslik = 'Barkodu okutun', onKod, onKapat }) {
       if (kapandi) return kapat;
       const ipucu = new Map();
       const B = ZXing.BarcodeFormat;
-      // TRY_HARDER kullanılmıyor: canlı görüntüde okumayı engelliyor
-      ipucu.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [B.EAN_13, B.EAN_8, B.UPC_A, B.UPC_E, B.CODE_128, B.CODE_39, B.ITF]);
+      // Hem çizgili barkodlar hem QR kod. TRY_HARDER kullanılmıyor: canlı görüntüde okumayı engelliyor
+      ipucu.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [B.EAN_13, B.EAN_8, B.UPC_A, B.UPC_E, B.CODE_128, B.CODE_39, B.ITF, B.QR_CODE, B.DATA_MATRIX]);
       const okuyucu = new ZXing.BrowserMultiFormatReader(ipucu, 150);
       durdur = () => okuyucu.reset();
       await okuyucu.decodeFromConstraints(kamera, video, sonuc => { if (sonuc) yakala(sonuc.getText()); });
@@ -879,7 +883,8 @@ async function sayimSayfasi() {
 // ---------- Tedarikçiye sipariş ----------
 
 async function siparisSayfasi(cariId) {
-  const { urunler, tedarikciler, dukkan } = await api('/siparis');
+  const [{ urunler, tedarikciler, dukkan }, ayar] = await Promise.all([api('/siparis'), api('/ayarlar')]);
+  pdfHazirla().catch(() => {});
   if (!tedarikciler.length) {
     icerik.innerHTML = `<h1>Sipariş</h1><div class="kart bos">Önce Cariler'den bir tedarikçi ekleyin (türü "Tedarikçi" olsun, telefonu yazılı olsun).</div>`;
     return;
@@ -900,7 +905,10 @@ async function siparisSayfasi(cariId) {
     </div>
  <div class="kart siparis-alt">
       <label>Not (isteğe bağlı)<input id="sNot" placeholder="Örn: Yarın öğlene kadar lazım"></label>
-      <a class="dugme yesil" id="sGonder" target="_blank" rel="noopener" style="width:100%">WhatsApp'tan siparişi gönder</a>
+      <div class="arac" style="margin:0">
+        <a class="dugme yesil" id="sGonder" target="_blank" rel="noopener" style="flex:1">💬 Mesaj olarak gönder</a>
+        <button class="yesil" id="sPdf" style="flex:1">📄 PDF olarak gönder</button>
+      </div>
       <p class="kucuk-yazi" id="sUyari"></p>
     </div>`;
 
@@ -954,11 +962,22 @@ async function siparisSayfasi(cariId) {
       ($('#sNot').value.trim() ? `\n\nNot: ${$('#sNot').value.trim()}` : '') + '\n\nTeşekkürler.';
     const g = $('#sGonder');
     g.href = waAdresi(t && t.telefon, metin);
-    g.style.opacity = secilenler.length ? 1 : 0.5;
-    g.style.pointerEvents = secilenler.length ? '' : 'none';
+    for (const d of [g, $('#sPdf')]) {
+      d.style.opacity = secilenler.length ? 1 : 0.5;
+      d.style.pointerEvents = secilenler.length ? '' : 'none';
+    }
     $('#sUyari').textContent = t && !t.telefon ? 'Bu tedarikçinin telefonu kayıtlı değil, WhatsApp kişi seçtirecek. Cari kartından telefon ekleyebilirsiniz.' : '';
   }
 
+  $('#sPdf').onclick = () => {
+    if (!window.jspdf) return bildir('PDF hazırlanıyor, bir saniye sonra tekrar basın', true);
+    const t = tedarikci();
+    const no = Number(localStorage.getItem('siparisNo') || 0) + 1;
+    localStorage.setItem('siparisNo', no);
+    const kalemler = urunler.filter(u => isaret.has(u.id)).map(u => ({ ad: u.ad, kod: u.kod, birim: u.birim, miktar: isaret.get(u.id) }));
+    pdfPaylas({ tur: 'siparis', no, tarih: bugun(), musteri: t ? t.ad : '', telefon: t ? t.telefon : '', kalemler, aciklama: $('#sNot').value.trim() }, ayar)
+      .catch(err => bildir(err.message, true));
+  };
   $('#sTedarikci').onchange = () => { varsayilanlar(); ciz(); };
   let zaman;
   $('#sAra').oninput = () => { clearTimeout(zaman); zaman = setTimeout(ciz, 150); };
@@ -980,6 +999,358 @@ async function siparisSayfasi(cariId) {
     onKapat: ciz,
   });
   varsayilanlar();
+  ciz();
+}
+
+// ---------- PDF (satış fişi ve fiyat teklifi) ----------
+
+let pdfYukleniyor = null;
+function scriptYukle(src) {
+  return new Promise((coz, reddet) => {
+    const sc = document.createElement('script');
+    sc.src = src;
+    sc.onload = coz;
+    sc.onerror = () => reddet(new Error('Dosya yüklenemedi: ' + src));
+    document.head.appendChild(sc);
+  });
+}
+// PDF kütüphanesini önceden yükler: paylaşım düğmesine basınca beklemeden açılsın (iPhone bunu şart koşuyor)
+function pdfHazirla() {
+  if (window.jspdf && window.PDF_FONT) return Promise.resolve();
+  pdfYukleniyor = pdfYukleniyor || Promise.all([scriptYukle('lib/jspdf.min.js'), scriptYukle('lib/pdf-font.js')])
+    .catch(e => { pdfYukleniyor = null; throw e; });
+  return pdfYukleniyor;
+}
+
+// PDF'te sorun çıkarmasın diye özel boşlukları düz boşluğa çevir
+const pdfMetin = v => String(v ?? '').replace(/[   ]/g, ' ');
+const pdfPara = n => pdfMetin(para(n));
+
+// belge: { tur: 'teklif' | 'satis' | 'siparis', no, tarih, musteri, telefon, kalemler, toplam, odeme, gecerlilik, aciklama }
+function pdfOlustur(belge, ayar) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  doc.addFileToVFS('dv.ttf', PDF_FONT.normal);
+  doc.addFileToVFS('dv-b.ttf', PDF_FONT.bold);
+  doc.addFont('dv.ttf', 'dv', 'normal');
+  doc.addFont('dv-b.ttf', 'dv', 'bold');
+  const yaz = (metin, x, y, { boyut = 10, kalin = false, hiza = 'left', renk = [31, 41, 55] } = {}) => {
+    doc.setFont('dv', kalin ? 'bold' : 'normal');
+    doc.setFontSize(boyut);
+    doc.setTextColor(...renk);
+    doc.text(pdfMetin(metin), x, y, { align: hiza });
+  };
+  const SOL = 15, SAG = 195;
+  const teklif = belge.tur === 'teklif';
+  const siparis = belge.tur === 'siparis';  // tedarikçiye sipariş: fiyatsız
+
+  // Başlık
+  doc.setFillColor(31, 78, 121);
+  doc.rect(0, 0, 210, 32, 'F');
+  yaz(ayar.dukkan_adi || 'Dükkan', SOL, 14, { boyut: 16, kalin: true, renk: [255, 255, 255] });
+  yaz([ayar.dukkan_telefon, ayar.dukkan_adres].filter(Boolean).join('  ·  '), SOL, 22, { boyut: 9, renk: [207, 224, 240] });
+  yaz({ teklif: 'FİYAT TEKLİFİ', satis: 'SATIŞ FİŞİ', siparis: 'SİPARİŞ FORMU' }[belge.tur], SAG, 14, { boyut: 14, kalin: true, hiza: 'right', renk: [255, 255, 255] });
+  yaz(`No: ${belge.no}   Tarih: ${tarihYaz(belge.tarih)}`, SAG, 22, { boyut: 9, hiza: 'right', renk: [207, 224, 240] });
+
+  let y = 44;
+  yaz(teklif ? 'Sayın' : siparis ? 'Tedarikçi' : 'Müşteri', SOL, y, { boyut: 9, renk: [107, 114, 128] });
+  yaz(belge.musteri || 'Perakende', SOL, y + 6, { boyut: 12, kalin: true });
+  if (belge.telefon) yaz(belge.telefon, SOL, y + 12, { boyut: 9, renk: [107, 114, 128] });
+  if (siparis) {
+    yaz('Sipariş', SAG, y, { boyut: 9, hiza: 'right', renk: [107, 114, 128] });
+    yaz(`${belge.kalemler.length} kalem`, SAG, y + 6, { boyut: 10, hiza: 'right' });
+  } else if (teklif) {
+    const son = new Date(belge.tarih);
+    son.setDate(son.getDate() + (belge.gecerlilik || 7));
+    yaz('Geçerlilik', SAG, y, { boyut: 9, hiza: 'right', renk: [107, 114, 128] });
+    yaz(`${tarihYaz(son.toLocaleDateString('sv-SE'))} tarihine kadar`, SAG, y + 6, { boyut: 10, hiza: 'right' });
+  } else {
+    yaz('Ödeme', SAG, y, { boyut: 9, hiza: 'right', renk: [107, 114, 128] });
+    yaz(belge.odeme === 'veresiye' ? 'Veresiye (hesaba yazıldı)' : 'Peşin', SAG, y + 6, { boyut: 10, hiza: 'right' });
+  }
+
+  // Tablo
+  y += 22;
+  const sutun = siparis
+    ? { no: SOL + 2, ad: SOL + 10, miktar: SAG - 2 }
+    : { no: SOL + 2, ad: SOL + 10, miktar: 128, fiyat: 160, tutar: SAG - 2 };
+  const baslik = () => {
+    doc.setFillColor(232, 240, 248);
+    doc.rect(SOL, y - 5, SAG - SOL, 8, 'F');
+    yaz('#', sutun.no, y, { boyut: 9, kalin: true });
+    yaz('Ürün', sutun.ad, y, { boyut: 9, kalin: true });
+    yaz('Miktar', sutun.miktar, y, { boyut: 9, kalin: true, hiza: 'right' });
+    if (!siparis) {
+      yaz('Birim fiyat', sutun.fiyat, y, { boyut: 9, kalin: true, hiza: 'right' });
+      yaz('Tutar', sutun.tutar, y, { boyut: 9, kalin: true, hiza: 'right' });
+    }
+    y += 9;
+  };
+  baslik();
+  doc.setFont('dv', 'normal');
+  doc.setFontSize(10);
+  belge.kalemler.forEach((k, i) => {
+    const satirlar = doc.splitTextToSize(pdfMetin(k.ad), sutun.miktar - sutun.ad - 22);
+    const yukseklik = satirlar.length * 4.6 + (k.kod ? 4.2 : 0) + 3;
+    if (y + yukseklik > 268) {
+      doc.addPage();
+      y = 20;
+      baslik();
+    }
+    yaz(String(i + 1), sutun.no, y, { boyut: 9, renk: [107, 114, 128] });
+    satirlar.forEach((s, j) => yaz(s, sutun.ad, y + j * 4.6, { boyut: 10 }));
+    if (k.kod) yaz(k.kod, sutun.ad, y + satirlar.length * 4.6, { boyut: 8, renk: [107, 114, 128] });
+    yaz(`${sayi(k.miktar)} ${k.birim}`, sutun.miktar, y, { boyut: 10, hiza: 'right' });
+    if (!siparis) {
+      yaz(pdfPara(k.fiyat), sutun.fiyat, y, { boyut: 10, hiza: 'right' });
+      yaz(pdfPara(k.tutar), sutun.tutar, y, { boyut: 10, hiza: 'right' });
+    }
+    y += yukseklik;
+    doc.setDrawColor(229, 231, 235);
+    doc.line(SOL, y - 3, SAG, y - 3);
+  });
+
+  // Toplam
+  if (y > 250) { doc.addPage(); y = 20; }
+  y += 4;
+  if (!siparis) {
+    doc.setFillColor(31, 78, 121);
+    doc.rect(120, y - 6, SAG - 120, 11, 'F');
+    yaz('GENEL TOPLAM', 124, y + 1.5, { boyut: 10, kalin: true, renk: [255, 255, 255] });
+    yaz(pdfPara(belge.toplam), SAG - 3, y + 1.5, { boyut: 12, kalin: true, hiza: 'right', renk: [255, 255, 255] });
+    y += 14;
+    if (ayar.pdf_notu) { yaz(ayar.pdf_notu, SAG, y, { boyut: 8, hiza: 'right', renk: [107, 114, 128] }); y += 8; }
+  }
+  if (belge.aciklama) {
+    yaz('Not:', SOL, y, { boyut: 9, kalin: true });
+    doc.splitTextToSize(pdfMetin(belge.aciklama), SAG - SOL - 12).forEach((s, j) => yaz(s, SOL + 10, y + j * 4.6, { boyut: 9 }));
+  }
+  yaz({
+    teklif: 'Teklifimizi değerlendirmenizi rica ederiz. Teşekkür ederiz.',
+    satis: 'Bizi tercih ettiğiniz için teşekkür ederiz.',
+    siparis: 'Siparişimizin hazırlanmasını rica ederiz. Teşekkürler.',
+  }[belge.tur], 105, 287,
+    { boyut: 8, hiza: 'center', renk: [107, 114, 128] });
+  return doc.output('blob');
+}
+
+// Paylaş menüsünü (WhatsApp vb.) açar. Tıklamanın içinde, beklemeden çağrılmalı.
+function pdfPaylas(belge, ayar) {
+  if (!window.jspdf || !window.PDF_FONT) return Promise.reject(new Error('PDF hazırlanıyor, bir saniye sonra tekrar basın'));
+  const ad = `${{ teklif: 'Teklif', satis: 'Satis-fisi', siparis: 'Siparis' }[belge.tur]}-${belge.no}-${(belge.musteri || '').replace(/[^\wğüşıöçĞÜŞİÖÇ]+/g, '-').slice(0, 30)}.pdf`;
+  return dosyaVer(ad, pdfOlustur(belge, ayar), 'application/pdf');
+}
+
+function belgeKarti(belge, ayar, ustMetin) {
+  const p = $('#pencere');
+  // Önce kritik stok uyarısı açıksa o kapanınca göster
+  if (p.open) {
+    p.addEventListener('close', () => setTimeout(() => belgeKarti(belge, ayar, ustMetin), 50), { once: true });
+    return;
+  }
+  const f = $('#pencereForm');
+  const teklif = belge.tur === 'teklif';
+  const siparis = belge.tur === 'siparis';  // tedarikçiye sipariş: fiyatsız
+  f.innerHTML = `<h2>${ustMetin}</h2>
+    <p><b>${esc(belge.musteri)}</b> · ${belge.kalemler.length} kalem · <b>${para(belge.toplam)}</b></p>
+    <button type="button" class="yesil" id="pdfGonder" style="width:100%;padding:14px">📄 PDF olarak WhatsApp'tan gönder</button>
+    <p class="kucuk-yazi">Açılan menüden WhatsApp'ı, sonra kişiyi seçin.</p>
+    <div class="dugmeler">${teklif && !belge.satis_no ? '<button type="button" class="ikincil" id="satisaCevir">Satışa çevir</button>' : ''}
+      <button type="button" class="ikincil" data-kapat>Kapat</button></div>`;
+  f.onsubmit = e => e.preventDefault();
+  f.querySelector('[data-kapat]').onclick = () => p.close();
+  $('#pdfGonder').onclick = () => pdfPaylas(belge, ayar).catch(err => bildir(err.message, true));
+  const sc = $('#satisaCevir');
+  if (sc) sc.onclick = () => { p.close(); teklifiSatisaCevir(belge); };
+  p.showModal();
+}
+
+async function belgeAc(tur, id) {
+  const [belge, ayar] = await Promise.all([api(`/${tur === 'teklif' ? 'teklifler' : 'satislar'}/${id}`), api('/ayarlar'), pdfHazirla()]);
+  belgeKarti({ ...belge, tur }, ayar, tur === 'teklif' ? `Teklif #${belge.no}` : `Satış fişi #${belge.no}`);
+}
+
+// ---------- Sepet: satış ve teklif ----------
+
+const sepetOku = mod => JSON.parse(localStorage.getItem('sepet_' + mod) || 'null') || { cari_id: '', musteri: '', kalemler: [], odeme: 'pesin', gecerlilik: 7, aciklama: '' };
+const sepetYaz = (mod, s) => localStorage.setItem('sepet_' + mod, JSON.stringify(s));
+
+function teklifiSatisaCevir(t) {
+  sepetYaz('satis', {
+    cari_id: t.cari_id || '', kalemler: t.kalemler.map(k => ({ urun_id: k.urun_id, miktar: k.miktar, fiyat: k.fiyat })),
+    odeme: 'pesin', aciklama: t.aciklama, teklif_id: t.id,
+  });
+  if (location.hash === '#/satis') yonlendir(); else location.hash = '#/satis';
+}
+
+function satisSayfasi() { return sepetSayfasi('satis'); }
+function teklifSayfasi() { return sepetSayfasi('teklif'); }
+
+async function sepetSayfasi(mod) {
+  const satisModu = mod === 'satis';
+  const [urunler, cariler, gecmis, ayar] = await Promise.all([
+    api('/urunler'), api('/cariler'), api(satisModu ? '/satislar' : '/teklifler'), api('/ayarlar'),
+  ]);
+  pdfHazirla().catch(() => {});
+  const urunHarita = new Map(urunler.map(u => [u.id, u]));
+  const sepet = sepetOku(mod);
+  sepet.kalemler = sepet.kalemler.filter(k => urunHarita.has(k.urun_id));
+  const kaydet = () => sepetYaz(mod, sepet);
+  const musteriler = [...cariler.filter(c => c.tur === 'musteri'), ...cariler.filter(c => c.tur !== 'musteri')];
+
+  icerik.innerHTML = `
+    <div class="sekme">
+      <a href="#/satis" class="${satisModu ? 'aktif' : ''}">🧾 Satış</a>
+      <a href="#/teklif" class="${satisModu ? '' : 'aktif'}">📄 Teklif</a>
+    </div>
+    ${sepet.teklif_id ? `<div class="kart" style="border-left:4px solid var(--ana)">Teklif #${sepet.teklif_id} satışa çevriliyor.</div>` : ''}
+    <div class="kart">
+      <label>Müşteri<select id="sMusteri"><option value="">${satisModu ? '— Perakende (müşterisiz) —' : '— Listede yok, adını yazacağım —'}</option>
+        ${musteriler.map(c => `<option value="${c.id}" ${String(c.id) === String(sepet.cari_id) ? 'selected' : ''}>${esc(c.ad)}${c.tur === 'tedarikci' ? ' (tedarikçi)' : ''}</option>`).join('')}</select></label>
+      ${satisModu ? '' : `<label id="sMusteriAdiKutu">Müşteri adı<input id="sMusteriAdi" value="${esc(sepet.musteri)}" placeholder="Örn: Ahmet Bey (Doblo)"></label>`}
+      <div class="arac" style="margin:0"><input type="search" id="sUrunAra" placeholder="Ürün ekle: ad, kod veya marka"><button class="ikincil" id="sBarkodOku">📷 Barkod</button></div>
+      <ul class="liste" id="sOneriler"></ul>
+    </div>
+    <div class="kart"><h2>${satisModu ? 'Sepet' : 'Teklif kalemleri'}</h2><ul class="liste" id="sSepet"></ul></div>
+    <div class="kart siparis-alt">
+      <div class="baslik-satir"><span>Toplam</span><b id="sToplam" style="font-size:24px"></b></div>
+      ${satisModu ? `<div class="sekme" style="margin:10px 0">
+          <a href="#" data-odeme="pesin">💵 Peşin</a><a href="#" data-odeme="veresiye">📝 Veresiye</a></div>`
+        : `<div class="form-izgara"><label>Geçerlilik (gün)<input id="sGecerlilik" inputmode="numeric" value="${esc(sepet.gecerlilik || 7)}"></label>
+           <label>Not<input id="sAciklama" value="${esc(sepet.aciklama || '')}" placeholder="Örn: Montaj dahil"></label></div>`}
+      <div class="arac" style="margin:0"><button class="yesil" id="sTamamla" style="flex:1;padding:14px">${satisModu ? '✓ Satışı tamamla' : '✓ Teklifi kaydet'}</button>
+        <button class="metin" id="sTemizle">Temizle</button></div>
+    </div>
+    <div class="kart"><h2>${satisModu ? 'Son satışlar' : 'Kayıtlı teklifler'}</h2>
+      ${gecmis.length ? `<ul class="liste">${gecmis.map(b => `<li class="tikla" data-belge="${b.id}">
+        <div><b>#${b.no} ${esc(b.musteri)}</b><br><span class="kucuk-yazi">${tarihYaz(b.tarih)} · ${b.kalemler.length} kalem
+        ${satisModu ? ' · ' + (b.odeme === 'veresiye' ? 'veresiye' : 'peşin') : b.satis_no ? ' · <span class="pozitif">satışa çevrildi</span>' : ''}</span></div>
+        <div><b>${para(b.toplam)}</b> 📄</div></li>`).join('')}</ul>` : '<div class="bos">Henüz kayıt yok</div>'}
+    </div>`;
+
+  const musteriAdiKutu = $('#sMusteriAdiKutu');
+  const musteriDegisti = () => {
+    sepet.cari_id = $('#sMusteri').value;
+    if (musteriAdiKutu) musteriAdiKutu.style.display = sepet.cari_id ? 'none' : '';
+    kaydet();
+  };
+  $('#sMusteri').onchange = musteriDegisti;
+  musteriDegisti();
+  if ($('#sMusteriAdi')) $('#sMusteriAdi').oninput = e => { sepet.musteri = e.target.value; kaydet(); };
+  if ($('#sGecerlilik')) $('#sGecerlilik').oninput = e => { sepet.gecerlilik = e.target.value; kaydet(); };
+  if ($('#sAciklama')) $('#sAciklama').oninput = e => { sepet.aciklama = e.target.value; kaydet(); };
+
+  function ekle(u, n = 1) {
+    const k = sepet.kalemler.find(x => x.urun_id === u.id);
+    if (k) k.miktar = Math.round((Number(k.miktar) + n) * 1000) / 1000;
+    else sepet.kalemler.push({ urun_id: u.id, miktar: n, fiyat: u.satis_fiyat || 0 });
+    kaydet();
+  }
+
+  function ciz() {
+    const toplam = sepet.kalemler.reduce((t, k) => t + (Number(k.miktar) || 0) * (Number(k.fiyat) || 0), 0);
+    $('#sSepet').innerHTML = sepet.kalemler.length ? sepet.kalemler.map(k => {
+      const u = urunHarita.get(k.urun_id);
+      const yetmez = satisModu && Number(k.miktar) > u.stok;
+      return `<li style="flex-wrap:wrap">
+        <div style="flex:1 1 100%"><b>${esc(u.ad)}</b> <span class="kucuk-yazi">${esc(u.kod)}</span>
+          <span class="kucuk-yazi ${yetmez ? 'negatif' : ''}">· stok ${sayi(u.stok)} ${esc(u.birim)}${yetmez ? ' (yetmiyor!)' : ''}</span></div>
+        <div class="sepet-satir">
+          <label>Adet<input inputmode="decimal" data-miktar="${u.id}" value="${k.miktar}"></label>
+          <label>Birim fiyat (₺)<input inputmode="decimal" data-fiyat="${u.id}" value="${k.fiyat}"></label>
+          <div class="sag"><span class="kucuk-yazi">Tutar</span><br><b data-tutar="${u.id}">${para(k.miktar * k.fiyat)}</b></div>
+          <button class="metin" data-sil="${u.id}">✕</button>
+        </div></li>`;
+    }).join('') : '<div class="bos">Ürün eklemek için yukarıdan arayın ya da barkod okutun</div>';
+    $('#sToplam').textContent = para(toplam);
+    icerik.querySelectorAll('[data-odeme]').forEach(a => {
+      a.classList.toggle('aktif', a.dataset.odeme === sepet.odeme);
+      a.onclick = e => { e.preventDefault(); sepet.odeme = a.dataset.odeme; kaydet(); ciz(); };
+    });
+    const guncelleSatir = id => {
+      const k = sepet.kalemler.find(x => x.urun_id === id);
+      $(`[data-tutar="${id}"]`).textContent = para(k.miktar * k.fiyat);
+      $('#sToplam').textContent = para(sepet.kalemler.reduce((t, x) => t + x.miktar * x.fiyat, 0));
+      kaydet();
+    };
+    icerik.querySelectorAll('[data-miktar]').forEach(g => (g.oninput = () => {
+      const k = sepet.kalemler.find(x => x.urun_id === Number(g.dataset.miktar));
+      k.miktar = Number(g.value.replace(',', '.')) || 0;
+      guncelleSatir(k.urun_id);
+    }));
+    icerik.querySelectorAll('[data-fiyat]').forEach(g => (g.oninput = () => {
+      const k = sepet.kalemler.find(x => x.urun_id === Number(g.dataset.fiyat));
+      k.fiyat = Number(g.value.replace(',', '.')) || 0;
+      guncelleSatir(k.urun_id);
+    }));
+    icerik.querySelectorAll('#sSepet [data-sil]').forEach(b => (b.onclick = () => {
+      sepet.kalemler = sepet.kalemler.filter(x => x.urun_id !== Number(b.dataset.sil));
+      kaydet();
+      ciz();
+    }));
+  }
+
+  // Arama önerileri
+  $('#sUrunAra').oninput = () => {
+    const ara = aramaMetni($('#sUrunAra').value);
+    const bulunan = ara ? urunler.filter(u => aramaMetni([u.ad, u.kod, u.marka, u.barkod].join(' ')).includes(ara)).slice(0, 6) : [];
+    $('#sOneriler').innerHTML = bulunan.map(u => `<li class="tikla" data-ekle="${u.id}"><div><b>${esc(u.ad)}</b><br>
+      <span class="kucuk-yazi">${esc(u.kod)} · stok ${sayi(u.stok)} ${esc(u.birim)}</span></div><div>${para(u.satis_fiyat)} <b>＋</b></div></li>`).join('');
+    $('#sOneriler').querySelectorAll('[data-ekle]').forEach(li => (li.onclick = () => {
+      ekle(urunHarita.get(Number(li.dataset.ekle)));
+      $('#sUrunAra').value = '';
+      $('#sOneriler').innerHTML = '';
+      ciz();
+    }));
+  };
+  $('#sBarkodOku').onclick = () => barkodTarayici({
+    baslik: satisModu ? 'Satılan ürünleri okutun' : 'Teklife eklenecek ürünleri okutun',
+    onKod: (kod, son) => {
+      const u = urunler.find(x => x.barkod === kod);
+      if (!u) {
+        son.className = 'tarayici-son kotu';
+        son.textContent = `Kayıtlı değil: ${kod}`;
+        return;
+      }
+      ekle(u);
+      const k = sepet.kalemler.find(x => x.urun_id === u.id);
+      son.className = 'tarayici-son iyi';
+      son.textContent = `✓ ${u.ad}: ${sayi(k.miktar)} ${u.birim} · ${para(u.satis_fiyat)}`;
+    },
+    onKapat: ciz,
+  });
+
+  $('#sTemizle').onclick = () => {
+    if (sepet.kalemler.length && !onayla('Sepet temizlensin mi?')) return;
+    localStorage.removeItem('sepet_' + mod);
+    yonlendir();
+  };
+
+  $('#sTamamla').onclick = async () => {
+    const kalemler = sepet.kalemler.filter(k => k.miktar > 0);
+    if (!kalemler.length) return bildir('Sepet boş', true);
+    try {
+      if (satisModu) {
+        if (sepet.odeme === 'veresiye' && !sepet.cari_id) return bildir('Veresiye için müşteri seçin', true);
+        const eksik = kalemler.filter(k => k.miktar > urunHarita.get(k.urun_id).stok);
+        if (eksik.length && !onayla(`${eksik.map(k => urunHarita.get(k.urun_id).ad).join(', ')} için stok yetmiyor. Yine de satış yapılsın mı? (Stok eksiye düşer)`)) return;
+        const { id } = await api('/satis', { method: 'POST', body: { cari_id: sepet.cari_id, odeme: sepet.odeme, kalemler, aciklama: sepet.aciklama, teklif_id: sepet.teklif_id } });
+        localStorage.removeItem('sepet_satis');
+        await yonlendir();
+        const belge = await api('/satislar/' + id);
+        await pdfHazirla().catch(() => {});
+        belgeKarti({ ...belge, tur: 'satis' }, ayar, `✓ Satış kaydedildi (fiş #${belge.no})`);
+      } else {
+        const { id } = await api('/teklifler', { method: 'POST', body: { cari_id: sepet.cari_id, musteri: sepet.musteri, kalemler, gecerlilik: sepet.gecerlilik, aciklama: sepet.aciklama } });
+        localStorage.removeItem('sepet_teklif');
+        await yonlendir();
+        const belge = await api('/teklifler/' + id);
+        await pdfHazirla().catch(() => {});
+        belgeKarti({ ...belge, tur: 'teklif' }, ayar, `✓ Teklif kaydedildi (#${belge.no})`);
+      }
+    } catch (err) { bildir(err.message, true); }
+  };
+  icerik.querySelectorAll('[data-belge]').forEach(li => (li.onclick = () => belgeAc(mod, li.dataset.belge).catch(err => bildir(err.message, true))));
   ciz();
 }
 
@@ -1006,6 +1377,12 @@ async function ayarlarSayfasi() {
     <form class="kart" id="ayarForm">
       <h2>Genel</h2>
       <label>Dükkan adı<input name="dukkan_adi" value="${esc(a.dukkan_adi)}" placeholder="Örn: Yılmaz Oto Yedek Parça"></label>
+      <p class="kucuk-yazi">Aşağıdakiler satış fişi ve teklif PDF'lerinin üstünde/altında görünür.</p>
+      <div class="form-izgara">
+        <label>Dükkan telefonu<input name="dukkan_telefon" type="tel" value="${esc(a.dukkan_telefon)}" placeholder="0532 123 45 67"></label>
+        <label>Dükkan adresi<input name="dukkan_adres" value="${esc(a.dukkan_adres)}" placeholder="Sanayi Sitesi 5. Blok No:3"></label>
+        <label class="tam">PDF alt notu<input name="pdf_notu" value="${esc(a.pdf_notu ?? 'Fiyatlarımıza KDV dahildir.')}"></label>
+      </div>
       <button type="submit">Kaydet</button>
     </form>
 
@@ -1041,7 +1418,7 @@ async function ayarlarSayfasi() {
   $('#ayarForm').onsubmit = async e => {
     e.preventDefault();
     const f = e.target;
-    await api('/ayarlar', { method: 'PUT', body: { dukkan_adi: f.dukkan_adi.value } });
+    await api('/ayarlar', { method: 'PUT', body: { dukkan_adi: f.dukkan_adi.value, dukkan_telefon: f.dukkan_telefon.value, dukkan_adres: f.dukkan_adres.value, pdf_notu: f.pdf_notu.value } });
     $('#dukkanAdi').textContent = f.dukkan_adi.value || 'Dükkan Takip';
     bildir('Kaydedildi');
   };

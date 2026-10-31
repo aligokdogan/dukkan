@@ -9,8 +9,8 @@ let veri = null;
 function bosVeri() {
   return {
     surum: 1,
-    sayac: { cari: 0, cariHareket: 0, urun: 0, stokHareket: 0, bildirim: 0 },
-    cariler: [], cariHareketler: [], urunler: [], stokHareketler: [], bildirimler: [],
+    sayac: { cari: 0, cariHareket: 0, urun: 0, stokHareket: 0, bildirim: 0, satis: 0, teklif: 0 },
+    cariler: [], cariHareketler: [], urunler: [], stokHareketler: [], bildirimler: [], satislar: [], teklifler: [],
     ayarlar: { dukkan_adi: '' },
   };
 }
@@ -42,6 +42,7 @@ async function veriYukle() {
     veri = JSON.parse(localStorage.getItem(VERI_ANAHTAR) || 'null');
   }
   veri = Object.assign(bosVeri(), veri || {});
+  veri.sayac = { ...bosVeri().sayac, ...veri.sayac };  // eski kayıtlarda yeni sayaçlar yok
   // Tarayıcıdan verilerin silinmemesini iste (Android'de yüklü uygulamada genelde otomatik onaylanır)
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   return veri;
@@ -341,10 +342,79 @@ yol('GET', '/siparis', () => {
   };
 });
 
+// ---------- Satış ve teklif ----------
+
+function kalemleriHazirla(liste) {
+  if (!Array.isArray(liste) || !liste.length) hataVer('Sepet boş');
+  return liste.map(k => {
+    const u = urunBul(k.urun_id);
+    const miktar = sayiAl(k.miktar);
+    const fiyat = sayiAl(k.fiyat);
+    if (!(miktar > 0)) hataVer(`${u.ad}: miktar hatalı`);
+    if (fiyat < 0) hataVer(`${u.ad}: fiyat hatalı`);
+    return { urun_id: u.id, ad: u.ad, kod: u.kod, birim: u.birim, miktar, fiyat, tutar: Math.round(miktar * fiyat * 100) / 100 };
+  });
+}
+const toplamAl = kalemler => Math.round(kalemler.reduce((t, k) => t + k.tutar, 0) * 100) / 100;
+
+// Tek seferde: her kalem için stok çıkışı; müşteri seçiliyse hesabına borç, peşinse ardından tahsilat
+yol('POST', '/satis', (p, q, b) => {
+  const kalemler = kalemleriHazirla(b.kalemler);
+  const cariId = b.cari_id ? Number(b.cari_id) : null;
+  const cari = cariId ? cariBul(cariId) : null;
+  const odeme = b.odeme === 'veresiye' ? 'veresiye' : 'pesin';
+  if (odeme === 'veresiye' && !cari) hataVer('Veresiye satış için müşteri seçin');
+  const tarih = yazi(b.tarih) || yerelBugun();
+  const no = yeniId('satis');
+  for (const k of kalemler) {
+    icCagir('POST', `/urunler/${k.urun_id}/hareket`, {
+      tip: 'cikis', miktar: k.miktar, birim_fiyat: k.fiyat, cari_id: cariId, cariye_yaz: !!cari, tarih,
+      aciklama: `Satış fişi #${no}`,
+    });
+  }
+  const toplam = toplamAl(kalemler);
+  if (cari && odeme === 'pesin' && toplam > 0) {
+    veri.cariHareketler.push({ id: yeniId('cariHareket'), cari_id: cari.id, tarih, tip: 'alacak', tutar: toplam, aciklama: `Satış fişi #${no} peşin ödendi` });
+  }
+  const satis = {
+    id: no, no, tarih, saat: simdi().slice(11, 16), cari_id: cariId, musteri: cari ? cari.ad : 'Perakende',
+    telefon: cari ? cari.telefon : '', odeme, kalemler, toplam, aciklama: yazi(b.aciklama), teklif_no: b.teklif_id ? Number(b.teklif_id) : null,
+  };
+  veri.satislar.push(satis);
+  if (satis.teklif_no) {
+    const t = veri.teklifler.find(x => x.id === satis.teklif_no);
+    if (t) t.satis_no = no;
+  }
+  return { id: no };
+});
+
+yol('GET', '/satislar', () => veri.satislar.slice(-30).reverse());
+yol('GET', '/satislar/:id', p => veri.satislar.find(x => x.id === Number(p.id)) || hataVer('Satış bulunamadı'));
+
+yol('POST', '/teklifler', (p, q, b) => {
+  const kalemler = kalemleriHazirla(b.kalemler);
+  const cari = b.cari_id ? cariBul(b.cari_id) : null;
+  const musteri = cari ? cari.ad : yazi(b.musteri);
+  if (!musteri) hataVer('Müşteri seçin ya da adını yazın');
+  const id = yeniId('teklif');
+  veri.teklifler.push({
+    id, no: id, tarih: yerelBugun(), cari_id: cari ? cari.id : null, musteri, telefon: cari ? cari.telefon : '',
+    gecerlilik: Math.max(1, Math.round(sayiAl(b.gecerlilik, 7))), kalemler, toplam: toplamAl(kalemler), aciklama: yazi(b.aciklama), satis_no: null,
+  });
+  return { id };
+});
+
+yol('GET', '/teklifler', () => veri.teklifler.slice().reverse());
+yol('GET', '/teklifler/:id', p => veri.teklifler.find(x => x.id === Number(p.id)) || hataVer('Teklif bulunamadı'));
+yol('DELETE', '/teklifler/:id', p => {
+  veri.teklifler = veri.teklifler.filter(x => x.id !== Number(p.id));
+  return { tamam: true };
+});
+
 yol('GET', '/ayarlar', () => ({ ...veri.ayarlar }));
 
 yol('PUT', '/ayarlar', (p, q, b) => {
-  for (const k of ['dukkan_adi', 'uyari_telefon']) if (k in b) veri.ayarlar[k] = yazi(b[k]);
+  for (const k of ['dukkan_adi', 'uyari_telefon', 'dukkan_telefon', 'dukkan_adres', 'pdf_notu']) if (k in b) veri.ayarlar[k] = yazi(b[k]);
   return { tamam: true };
 });
 
@@ -353,7 +423,7 @@ yol('GET', '/bildirimler', () => veri.bildirimler.slice(0, 50));
 // ---------- Dışarıya açılan işlevler ----------
 
 const DEGISTIRENLER = new Set(['POST', 'PUT', 'DELETE']);
-const STOK_ETKILI = /^\/(urunler|stok-hareket)/;
+const STOK_ETKILI = /^\/(urunler|stok-hareket|satis)/;
 
 // Değişiklikten sonra yeni kritik ürün çıkarsa kritikUyari(urunler, metin) çağrılır.
 let kritikUyari = () => {};
@@ -507,6 +577,7 @@ const Yerel = {
     if (!gelen || gelen.uygulama !== 'dukkan-takip' || !Array.isArray(gelen.urunler)) hataVer('Bu dosya Dükkan Takip yedeği değil.');
     delete gelen.uygulama;
     veri = Object.assign(bosVeri(), gelen);
+    veri.sayac = { ...bosVeri().sayac, ...veri.sayac };
     await veriKaydet();
     return { cari: veri.cariler.length, urun: veri.urunler.length };
   },

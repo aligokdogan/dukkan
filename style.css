@@ -135,3 +135,13 @@ dialog .dugmeler { display: flex; gap: 8px; justify-content: flex-end; margin-to
 .barkod-satir { display: flex; gap: 6px; margin-top: 4px; }
 .barkod-satir input { margin: 0; }
 .sayim-adet { width: 80px; text-align: center; }
+
+.sekme { display: flex; background: #e5e7eb; border-radius: 10px; padding: 3px; margin-bottom: 12px; }
+.sekme a { flex: 1; text-align: center; padding: 9px; border-radius: 8px; color: #374151; font-weight: 600; }
+.sekme a.aktif { background: #fff; color: var(--ana); box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+
+.sepet-satir { flex: 1 1 100%; display: grid; grid-template-columns: 1fr 1.3fr 1.3fr auto; gap: 8px; align-items: end; margin-top: 6px; }
+.sepet-satir label { margin: 0; font-size: 12px; color: var(--gri); }
+.sepet-satir label { display: flex; flex-direction: column; }
+.sepet-satir input { display: block; width: 100%; min-width: 0; padding: 8px; text-align: center; margin-top: 2px; }
+.sepet-satir .sag { text-align: right; white-space: nowrap; }
