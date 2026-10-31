@@ -24,6 +24,10 @@ titreşir ve ekranda uyarı çıkar. Uyarıdaki **WhatsApp'tan gönder** düğme
 - Satış fişi, fiyat teklifi ve tedarikçi sipariş formu **PDF** olarak paylaş menüsünden WhatsApp'a gönderilir
   (PDF telefonda oluşturulur: `lib/jspdf.min.js` MIT lisansı, Türkçe karakterler için küçültülmüş DejaVu Sans yazı tipi).
 
+Satış, teklif ve mal alımı listelerinde **Bugün / Bu hafta / Bu ay / Tarih seç** filtresi ve seçilen aralığın toplamı vardır.
+Kayıttaki **✏️** ile fiş tekrar sepete açılır; kaydedince eski kaydın stok ve hesap etkisi geri alınıp yenisi yazılır.
+Aynı ekrandan tek bir fiş tamamen silinebilir.
+
 ## Barkod
 
 Ürün kartına barkod veya QR kod okutulabilir. Stok sayfasında (ana sayfadaki **Stok** düğmesi) **Barkodla bul**, **Sayım yap** (okuttukça sayar, bitince

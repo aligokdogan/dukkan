@@ -205,3 +205,7 @@ dialog .dugmeler { display: flex; gap: 8px; justify-content: flex-end; margin-to
 [data-tema="gece"] dialog { background: var(--kart); color: #e2e8f0; }
 [data-tema="gece"] h1, [data-tema="gece"] h2, [data-tema="gece"] b { color: #f1f5f9; }
 [data-tema="gece"] .tema-sec.aktif { border-color: #93c5fd; }
+
+.duzenleme-kart { border-left: 4px solid var(--turuncu); background: #fff8f1; }
+[data-tema="gece"] .duzenleme-kart { background: #2a2116; }
+.kucuk-sekme a { padding: 7px 4px; font-size: 14px; }

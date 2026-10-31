@@ -308,6 +308,7 @@ yol('POST', '/urunler/:id/hareket', (p, q, b) => {
   // Sayımda fark saklanır ki hareket silinince geri alınabilsin
   const miktar = tip === 'sayim' ? yuvarla(girilen - u.stok) : girilen;
   const h = { id: yeniId('stokHareket'), urun_id: u.id, tarih, tip, miktar, birim_fiyat: fiyat, cari_id: cariId, aciklama };
+  if (b.belge) h.belge = b.belge;
   veri.stokHareketler.push(h);
   u.stok = yuvarla(u.stok + (tip === 'cikis' ? -miktar : miktar));
   if (cariId && b.cariye_yaz && fiyat > 0 && tip !== 'sayim') {
@@ -357,29 +358,46 @@ function kalemleriHazirla(liste) {
 }
 const toplamAl = kalemler => Math.round(kalemler.reduce((t, k) => t + k.tutar, 0) * 100) / 100;
 
+// Satış ve mal alımı kayıtlarının stok ve cari hareketleri belge: 'satis:5' ile işaretlenir.
+// Eski kayıtlarda işaret yok, onlar açıklamadan tanınır.
+function belgeHareketleriniSil(tur, no) {
+  const isaret = `${tur}:${no}`;
+  const onEk = tur === 'satis' ? `Satış fişi #${no}` : `Mal alımı #${no}`;
+  const eskiMi = a => a === onEk || String(a).startsWith(onEk + ' - ');
+  for (const h of veri.stokHareketler.filter(h => h.belge === isaret || (!h.belge && eskiMi(h.aciklama)))) {
+    icCagir('DELETE', `/stok-hareket/${h.id}`);
+  }
+  veri.cariHareketler = veri.cariHareketler.filter(h => !(h.belge === isaret || (!h.belge && h.aciklama === `${onEk} peşin ödendi`)));
+}
+
 // Tek seferde: her kalem için stok çıkışı; müşteri seçiliyse hesabına borç, peşinse ardından tahsilat
-yol('POST', '/satis', (p, q, b) => {
+function satisYaz(b, no, eski) {
   const kalemler = kalemleriHazirla(b.kalemler);
   const cariId = b.cari_id ? Number(b.cari_id) : null;
   const cari = cariId ? cariBul(cariId) : null;
   const odeme = b.odeme === 'veresiye' ? 'veresiye' : 'pesin';
   if (odeme === 'veresiye' && !cari) hataVer('Veresiye satış için müşteri seçin');
-  const tarih = yazi(b.tarih) || yerelBugun();
-  const no = yeniId('satis');
+  const tarih = yazi(b.tarih) || (eski ? eski.tarih : yerelBugun());
   for (const k of kalemler) {
     icCagir('POST', `/urunler/${k.urun_id}/hareket`, {
       tip: 'cikis', miktar: k.miktar, birim_fiyat: k.fiyat, cari_id: cariId, cariye_yaz: !!cari, tarih,
-      aciklama: `Satış fişi #${no}`,
+      aciklama: `Satış fişi #${no}`, belge: `satis:${no}`,
     });
   }
   const toplam = toplamAl(kalemler);
   if (cari && odeme === 'pesin' && toplam > 0) {
-    veri.cariHareketler.push({ id: yeniId('cariHareket'), cari_id: cari.id, tarih, tip: 'alacak', tutar: toplam, aciklama: `Satış fişi #${no} peşin ödendi` });
+    veri.cariHareketler.push({ id: yeniId('cariHareket'), cari_id: cari.id, tarih, tip: 'alacak', tutar: toplam, aciklama: `Satış fişi #${no} peşin ödendi`, belge: `satis:${no}` });
   }
-  const satis = {
-    id: no, no, tarih, saat: simdi().slice(11, 16), cari_id: cariId, musteri: cari ? cari.ad : 'Perakende',
-    telefon: cari ? cari.telefon : '', odeme, kalemler, toplam, aciklama: yazi(b.aciklama), teklif_no: b.teklif_id ? Number(b.teklif_id) : null,
+  return {
+    id: no, no, tarih, saat: eski ? eski.saat : simdi().slice(11, 16), cari_id: cariId, musteri: cari ? cari.ad : 'Perakende',
+    telefon: cari ? cari.telefon : '', odeme, kalemler, toplam, aciklama: yazi(b.aciklama),
+    teklif_no: eski ? eski.teklif_no : b.teklif_id ? Number(b.teklif_id) : null,
   };
+}
+
+yol('POST', '/satis', (p, q, b) => {
+  const no = yeniId('satis');
+  const satis = satisYaz(b, no);
   veri.satislar.push(satis);
   if (satis.teklif_no) {
     const t = veri.teklifler.find(x => x.id === satis.teklif_no);
@@ -388,35 +406,83 @@ yol('POST', '/satis', (p, q, b) => {
   return { id: no };
 });
 
+const satisBul = id => veri.satislar.find(x => x.id === Number(id)) || hataVer('Satış bulunamadı');
+
+yol('PUT', '/satislar/:id', (p, q, b) => {
+  const eski = satisBul(p.id);
+  belgeHareketleriniSil('satis', eski.no);
+  const yeni = satisYaz(b, eski.no, eski);
+  yeni.duzeltme = simdi();
+  veri.satislar[veri.satislar.indexOf(eski)] = yeni;
+  return { id: eski.no };
+});
+
+yol('DELETE', '/satislar/:id', p => {
+  const eski = satisBul(p.id);
+  belgeHareketleriniSil('satis', eski.no);
+  veri.satislar = veri.satislar.filter(x => x !== eski);
+  const t = eski.teklif_no && veri.teklifler.find(x => x.id === eski.teklif_no);
+  if (t) t.satis_no = null;
+  return { tamam: true };
+});
+
 // Mal alımı: her kalem için stok girişi; tedarikçi seçiliyse hesabına alacak (borcumuz), peşinse ardından ödeme
-yol('POST', '/alis', (p, q, b) => {
+function alisYaz(b, no, eski) {
   const kalemler = kalemleriHazirla(b.kalemler);
   const cariId = b.cari_id ? Number(b.cari_id) : null;
   const cari = cariId ? cariBul(cariId) : null;
   const odeme = b.odeme === 'veresiye' ? 'veresiye' : 'pesin';
   if (odeme === 'veresiye' && !cari) hataVer('Veresiye alım için tedarikçi seçin');
-  const tarih = yazi(b.tarih) || yerelBugun();
-  const no = yeniId('alis');
+  const tarih = yazi(b.tarih) || (eski ? eski.tarih : yerelBugun());
   const aciklama = yazi(b.aciklama);
   for (const k of kalemler) {
     icCagir('POST', `/urunler/${k.urun_id}/hareket`, {
       tip: 'giris', miktar: k.miktar, birim_fiyat: k.fiyat, cari_id: cariId, cariye_yaz: !!cari, tarih,
-      aciklama: `Mal alımı #${no}` + (aciklama ? ` - ${aciklama}` : ''),
+      aciklama: `Mal alımı #${no}` + (aciklama ? ` - ${aciklama}` : ''), belge: `alis:${no}`,
     });
     if (k.fiyat > 0) urunBul(k.urun_id).alis_fiyat = k.fiyat;  // son alış fiyatı
   }
   const toplam = toplamAl(kalemler);
   if (cari && odeme === 'pesin' && toplam > 0) {
-    veri.cariHareketler.push({ id: yeniId('cariHareket'), cari_id: cari.id, tarih, tip: 'borc', tutar: toplam, aciklama: `Mal alımı #${no} peşin ödendi` });
+    veri.cariHareketler.push({ id: yeniId('cariHareket'), cari_id: cari.id, tarih, tip: 'borc', tutar: toplam, aciklama: `Mal alımı #${no} peşin ödendi`, belge: `alis:${no}` });
   }
-  veri.alislar.push({ id: no, no, tarih, cari_id: cariId, musteri: cari ? cari.ad : 'Tedarikçisiz', odeme, kalemler, toplam, aciklama });
+  return { id: no, no, tarih, cari_id: cariId, musteri: cari ? cari.ad : 'Tedarikçisiz', odeme, kalemler, toplam, aciklama };
+}
+
+yol('POST', '/alis', (p, q, b) => {
+  const no = yeniId('alis');
+  veri.alislar.push(alisYaz(b, no));
   return { id: no };
 });
 
-yol('GET', '/alislar', () => veri.alislar.slice(-30).reverse());
+const alisBul = id => veri.alislar.find(x => x.id === Number(id)) || hataVer('Mal alımı bulunamadı');
 
-yol('GET', '/satislar', () => veri.satislar.slice(-30).reverse());
-yol('GET', '/satislar/:id', p => veri.satislar.find(x => x.id === Number(p.id)) || hataVer('Satış bulunamadı'));
+yol('PUT', '/alislar/:id', (p, q, b) => {
+  const eski = alisBul(p.id);
+  belgeHareketleriniSil('alis', eski.no);
+  const yeni = alisYaz(b, eski.no, eski);
+  yeni.duzeltme = simdi();
+  veri.alislar[veri.alislar.indexOf(eski)] = yeni;
+  return { id: eski.no };
+});
+
+yol('DELETE', '/alislar/:id', p => {
+  const eski = alisBul(p.id);
+  belgeHareketleriniSil('alis', eski.no);
+  veri.alislar = veri.alislar.filter(x => x !== eski);
+  return { tamam: true };
+});
+
+// Listeler: ?bas=YYYY-AA-GG&bit=YYYY-AA-GG ile tarih aralığı, en yeni üstte
+const aralikta = (liste, q) => {
+  const bas = q.get('bas') || '', bit = q.get('bit') || '9999';
+  return liste.filter(x => x.tarih >= bas && x.tarih <= bit).reverse();
+};
+
+yol('GET', '/alislar', (p, q) => aralikta(veri.alislar, q));
+yol('GET', '/alislar/:id', p => alisBul(p.id));
+yol('GET', '/satislar', (p, q) => aralikta(veri.satislar, q));
+yol('GET', '/satislar/:id', p => satisBul(p.id));
 
 yol('POST', '/teklifler', (p, q, b) => {
   const kalemler = kalemleriHazirla(b.kalemler);
@@ -431,7 +497,20 @@ yol('POST', '/teklifler', (p, q, b) => {
   return { id };
 });
 
-yol('GET', '/teklifler', () => veri.teklifler.slice().reverse());
+yol('PUT', '/teklifler/:id', (p, q, b) => {
+  const t = veri.teklifler.find(x => x.id === Number(p.id)) || hataVer('Teklif bulunamadı');
+  const kalemler = kalemleriHazirla(b.kalemler);
+  const cari = b.cari_id ? cariBul(b.cari_id) : null;
+  const musteri = cari ? cari.ad : yazi(b.musteri);
+  if (!musteri) hataVer('Müşteri seçin ya da adını yazın');
+  Object.assign(t, {
+    cari_id: cari ? cari.id : null, musteri, telefon: cari ? cari.telefon : '', gecerlilik: Math.max(1, Math.round(sayiAl(b.gecerlilik, 7))),
+    kalemler, toplam: toplamAl(kalemler), aciklama: yazi(b.aciklama), duzeltme: simdi(),
+  });
+  return { id: t.id };
+});
+
+yol('GET', '/teklifler', (p, q) => aralikta(veri.teklifler, q));
 yol('GET', '/teklifler/:id', p => veri.teklifler.find(x => x.id === Number(p.id)) || hataVer('Teklif bulunamadı'));
 yol('DELETE', '/teklifler/:id', p => {
   veri.teklifler = veri.teklifler.filter(x => x.id !== Number(p.id));

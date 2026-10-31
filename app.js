@@ -1213,6 +1213,33 @@ async function belgeAc(tur, id) {
 
 // ---------- Sepet: satış ve teklif ----------
 
+// Geçmiş listesi için tarih aralığı; seçim telefonda hatırlanır.
+const ARALIKLAR = [['bugun', 'Bugün'], ['hafta', 'Bu hafta'], ['ay', 'Bu ay'], ['ozel', 'Tarih seç']];
+function aralikOku() {
+  return JSON.parse(localStorage.getItem('belgeAralik') || 'null') || { tur: 'hafta', bas: bugun(), bit: bugun() };
+}
+function aralikHesapla(a) {
+  const d = new Date();
+  const yaz = t => t.toLocaleDateString('sv-SE');
+  if (a.tur === 'bugun') return { bas: bugun(), bit: bugun() };
+  if (a.tur === 'hafta') { d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return { bas: yaz(d), bit: bugun() }; }
+  if (a.tur === 'ay') return { bas: bugun().slice(0, 8) + '01', bit: bugun() };
+  return { bas: a.bas || bugun(), bit: a.bit || bugun() };
+}
+
+// Kayıtlı bir satışı / mal alımını / teklifi düzenlemek için sepete geri yükler.
+async function belgeDuzenle(mod, id) {
+  const b = await api(`/${{ satis: 'satislar', teklif: 'teklifler', alis: 'alislar' }[mod]}/${id}`);
+  const eski = {};
+  for (const k of b.kalemler) eski[k.urun_id] = (eski[k.urun_id] || 0) + k.miktar;
+  sepetYaz(mod, {
+    cari_id: b.cari_id || '', musteri: b.cari_id ? '' : b.musteri, odeme: b.odeme || 'pesin', gecerlilik: b.gecerlilik || 7, aciklama: b.aciklama || '',
+    kalemler: b.kalemler.map(k => ({ urun_id: k.urun_id, miktar: k.miktar, fiyat: k.fiyat })), duzenle_id: b.id, eski,
+  });
+  if (location.hash === '#/' + mod) yonlendir(); else location.hash = '#/' + mod;
+  window.scrollTo(0, 0);
+}
+
 const sepetOku = mod => JSON.parse(localStorage.getItem('sepet_' + mod) || 'null') || { cari_id: '', musteri: '', kalemler: [], odeme: 'pesin', gecerlilik: 7, aciklama: '' };
 const sepetYaz = (mod, s) => localStorage.setItem('sepet_' + mod, JSON.stringify(s));
 
@@ -1240,14 +1267,14 @@ async function sepetSayfasi(mod) {
   const satisModu = mod === 'satis';
   const alisModu = mod === 'alis';
   const odemeli = satisModu || alisModu;
-  const [urunler, cariler, gecmis, ayar] = await Promise.all([
-    api('/urunler'), api('/cariler'), api({ satis: '/satislar', teklif: '/teklifler', alis: '/alislar' }[mod]), api('/ayarlar'),
-  ]);
+  const [urunler, cariler, ayar] = await Promise.all([api('/urunler'), api('/cariler'), api('/ayarlar')]);
   pdfHazirla().catch(() => {});
   const urunHarita = new Map(urunler.map(u => [u.id, u]));
   const sepet = sepetOku(mod);
   sepet.kalemler = sepet.kalemler.filter(k => urunHarita.has(k.urun_id));
   const kaydet = () => sepetYaz(mod, sepet);
+  // Düzenlenen satıştaki adetler kaydedilince stoğa geri döneceği için kullanılabilir sayılır.
+  const eldeki = u => u.stok + ((sepet.duzenle_id && sepet.eski && sepet.eski[u.id]) || 0);
   const anaTur = alisModu ? 'tedarikci' : 'musteri';
   const musteriler = [...cariler.filter(c => c.tur === anaTur), ...cariler.filter(c => c.tur !== anaTur)];
   const fiyatAl = u => (alisModu ? u.alis_fiyat : u.satis_fiyat) || 0;
@@ -1258,6 +1285,11 @@ async function sepetSayfasi(mod) {
       <a href="#/teklif" class="${satisModu ? '' : 'aktif'}">📄 Teklif</a>
     </div>`}
     ${sepet.teklif_id ? `<div class="kart" style="border-left:4px solid var(--ana)">Teklif #${sepet.teklif_id} satışa çevriliyor.</div>` : ''}
+    ${sepet.duzenle_id ? `<div class="kart duzenleme-kart"><div class="baslik-satir">
+      <b>✏️ ${{ satis: 'Satış fişi', teklif: 'Teklif', alis: 'Mal alımı' }[mod]} #${sepet.duzenle_id} düzenleniyor</b>
+      <button class="metin" id="sVazgec" style="color:var(--ana)">Vazgeç</button></div>
+      <p class="kucuk-yazi" style="margin:4px 0 0">Kaydedince eski kaydın yerine geçer${mod === 'teklif' ? '' : ', stok ve hesaplar buna göre düzelir'}.</p>
+      <button class="metin" id="sBelgeSil" style="padding:8px 0 0">🗑 Bu ${{ satis: 'fişi', teklif: 'teklifi', alis: 'alımı' }[mod]} tamamen sil</button></div>` : ''}
     <div class="kart">
       <label>${alisModu ? 'Tedarikçi' : 'Müşteri'}<select id="sMusteri"><option value="">${{ satis: '— Perakende (müşterisiz) —', teklif: '— Listede yok, adını yazacağım —', alis: '— Tedarikçisiz (sadece stoğa ekle) —' }[mod]}</option>
         ${musteriler.map(c => `<option value="${c.id}" ${String(c.id) === String(sepet.cari_id) ? 'selected' : ''}>${esc(c.ad)}${c.tur !== anaTur ? (c.tur === 'tedarikci' ? ' (tedarikçi)' : ' (müşteri)') : ''}</option>`).join('')}</select></label>
@@ -1272,14 +1304,13 @@ async function sepetSayfasi(mod) {
           <a href="#" data-odeme="pesin">💵 ${alisModu ? 'Parası ödendi' : 'Peşin'}</a><a href="#" data-odeme="veresiye">📝 ${alisModu ? 'Borçlandık (veresiye)' : 'Veresiye'}</a></div>`
         : `<div class="form-izgara"><label>Geçerlilik (gün)<input id="sGecerlilik" inputmode="numeric" value="${esc(sepet.gecerlilik || 7)}"></label>
            <label>Not<input id="sAciklama" value="${esc(sepet.aciklama || '')}" placeholder="Örn: Montaj dahil"></label></div>`}
-      <div class="arac" style="margin:0"><button class="yesil" id="sTamamla" style="flex:1;padding:14px">${{ satis: '✓ Satışı tamamla', teklif: '✓ Teklifi kaydet', alis: '✓ Mal alımını kaydet' }[mod]}</button>
+      <div class="arac" style="margin:0"><button class="yesil" id="sTamamla" style="flex:1;padding:14px">${sepet.duzenle_id ? '✓ Değişiklikleri kaydet' : { satis: '✓ Satışı tamamla', teklif: '✓ Teklifi kaydet', alis: '✓ Mal alımını kaydet' }[mod]}</button>
         <button class="metin" id="sTemizle">Temizle</button></div>
     </div>
-    <div class="kart"><h2>${{ satis: 'Son satışlar', teklif: 'Kayıtlı teklifler', alis: 'Son mal alımları' }[mod]}</h2>
-      ${gecmis.length ? `<ul class="liste">${gecmis.map(b => `<li ${alisModu ? '' : `class="tikla" data-belge="${b.id}"`}>
-        <div><b>#${b.no} ${esc(b.musteri)}</b><br><span class="kucuk-yazi">${tarihYaz(b.tarih)} · ${b.kalemler.length} kalem
-        ${odemeli ? ' · ' + (b.odeme === 'veresiye' ? (alisModu ? 'borçlandık' : 'veresiye') : (alisModu ? 'ödendi' : 'peşin')) : b.satis_no ? ' · <span class="pozitif">satışa çevrildi</span>' : ''}</span></div>
-        <div><b>${para(b.toplam)}</b>${alisModu ? '' : ' 📄'}</div></li>`).join('')}</ul>` : '<div class="bos">Henüz kayıt yok</div>'}
+    <div class="kart"><h2>${{ satis: 'Satışlar', teklif: 'Teklifler', alis: 'Mal alımları' }[mod]}</h2>
+      <div class="sekme kucuk-sekme">${ARALIKLAR.map(([k, ad]) => `<a href="#" data-aralik="${k}">${ad}</a>`).join('')}</div>
+      <div class="form-izgara" id="sOzelAralik"><label>Başlangıç<input type="date" id="sBas"></label><label>Bitiş<input type="date" id="sBit"></label></div>
+      <div id="sGecmis"></div>
     </div>`;
 
   const musteriAdiKutu = $('#sMusteriAdiKutu');
@@ -1305,7 +1336,7 @@ async function sepetSayfasi(mod) {
     const toplam = sepet.kalemler.reduce((t, k) => t + (Number(k.miktar) || 0) * (Number(k.fiyat) || 0), 0);
     $('#sSepet').innerHTML = sepet.kalemler.length ? sepet.kalemler.map(k => {
       const u = urunHarita.get(k.urun_id);
-      const yetmez = satisModu && Number(k.miktar) > u.stok;
+      const yetmez = satisModu && Number(k.miktar) > eldeki(u);
       return `<li style="flex-wrap:wrap">
         <div style="flex:1 1 100%"><b>${esc(u.ad)}</b> <span class="kucuk-yazi">${esc(u.kod)}</span>
           <span class="kucuk-yazi ${yetmez ? 'negatif' : ''}">· stok ${sayi(u.stok)} ${esc(u.birim)}${yetmez ? ' (yetmiyor!)' : ''}</span></div>
@@ -1386,31 +1417,90 @@ async function sepetSayfasi(mod) {
     try {
       if (satisModu) {
         if (sepet.odeme === 'veresiye' && !sepet.cari_id) return bildir('Veresiye için müşteri seçin', true);
-        const eksik = kalemler.filter(k => k.miktar > urunHarita.get(k.urun_id).stok);
+        const eksik = kalemler.filter(k => k.miktar > eldeki(urunHarita.get(k.urun_id)));
         if (eksik.length && !onayla(`${eksik.map(k => urunHarita.get(k.urun_id).ad).join(', ')} için stok yetmiyor. Yine de satış yapılsın mı? (Stok eksiye düşer)`)) return;
-        const { id } = await api('/satis', { method: 'POST', body: { cari_id: sepet.cari_id, odeme: sepet.odeme, kalemler, aciklama: sepet.aciklama, teklif_id: sepet.teklif_id } });
+        const govde = { cari_id: sepet.cari_id, odeme: sepet.odeme, kalemler, aciklama: sepet.aciklama, teklif_id: sepet.teklif_id };
+        const { id } = sepet.duzenle_id
+          ? await api('/satislar/' + sepet.duzenle_id, { method: 'PUT', body: govde })
+          : await api('/satis', { method: 'POST', body: govde });
         localStorage.removeItem('sepet_satis');
         await yonlendir();
         const belge = await api('/satislar/' + id);
         await pdfHazirla().catch(() => {});
-        belgeKarti({ ...belge, tur: 'satis' }, ayar, `✓ Satış kaydedildi (fiş #${belge.no})`);
+        belgeKarti({ ...belge, tur: 'satis' }, ayar, `✓ Satış ${sepet.duzenle_id ? 'düzeltildi' : 'kaydedildi'} (fiş #${belge.no})`);
       } else if (alisModu) {
         if (sepet.odeme === 'veresiye' && !sepet.cari_id) return bildir('Borçlu alım için tedarikçi seçin', true);
-        const { id: no } = await api('/alis', { method: 'POST', body: { cari_id: sepet.cari_id, odeme: sepet.odeme, kalemler, aciklama: sepet.aciklama } });
+        const govde = { cari_id: sepet.cari_id, odeme: sepet.odeme, kalemler, aciklama: sepet.aciklama };
+        const { id: no } = sepet.duzenle_id
+          ? await api('/alislar/' + sepet.duzenle_id, { method: 'PUT', body: govde })
+          : await api('/alis', { method: 'POST', body: govde });
         localStorage.removeItem('sepet_alis');
-        bildir(`✓ Mal alımı #${no} kaydedildi, stoklar arttı`);
+        bildir(sepet.duzenle_id ? `✓ Mal alımı #${no} düzeltildi` : `✓ Mal alımı #${no} kaydedildi, stoklar arttı`);
         await yonlendir();
       } else {
-        const { id } = await api('/teklifler', { method: 'POST', body: { cari_id: sepet.cari_id, musteri: sepet.musteri, kalemler, gecerlilik: sepet.gecerlilik, aciklama: sepet.aciklama } });
+        const govde = { cari_id: sepet.cari_id, musteri: sepet.musteri, kalemler, gecerlilik: sepet.gecerlilik, aciklama: sepet.aciklama };
+        const { id } = sepet.duzenle_id
+          ? await api('/teklifler/' + sepet.duzenle_id, { method: 'PUT', body: govde })
+          : await api('/teklifler', { method: 'POST', body: govde });
         localStorage.removeItem('sepet_teklif');
         await yonlendir();
         const belge = await api('/teklifler/' + id);
         await pdfHazirla().catch(() => {});
-        belgeKarti({ ...belge, tur: 'teklif' }, ayar, `✓ Teklif kaydedildi (#${belge.no})`);
+        belgeKarti({ ...belge, tur: 'teklif' }, ayar, `✓ Teklif ${sepet.duzenle_id ? 'düzeltildi' : 'kaydedildi'} (#${belge.no})`);
       }
     } catch (err) { bildir(err.message, true); }
   };
-  icerik.querySelectorAll('[data-belge]').forEach(li => (li.onclick = () => belgeAc(mod, li.dataset.belge).catch(err => bildir(err.message, true))));
+  if ($('#sVazgec')) $('#sVazgec').onclick = () => { localStorage.removeItem('sepet_' + mod); yonlendir(); };
+  if ($('#sBelgeSil')) $('#sBelgeSil').onclick = async () => {
+    const ad = { satis: `Satış fişi #${sepet.duzenle_id}`, teklif: `Teklif #${sepet.duzenle_id}`, alis: `Mal alımı #${sepet.duzenle_id}` }[mod];
+    if (!onayla(`${ad} tamamen silinsin mi?${mod === 'teklif' ? '' : ' Stok ve hesaplardaki etkisi de geri alınır.'} Bu geri alınamaz.`)) return;
+    try {
+      await api(`/${{ satis: 'satislar', teklif: 'teklifler', alis: 'alislar' }[mod]}/${sepet.duzenle_id}`, { method: 'DELETE' });
+      localStorage.removeItem('sepet_' + mod);
+      bildir(`${ad} silindi`);
+      yonlendir();
+    } catch (err) { bildir(err.message, true); }
+  };
+
+  const aralik = aralikOku();
+  async function gecmisYukle() {
+    const { bas, bit } = aralikHesapla(aralik);
+    icerik.querySelectorAll('[data-aralik]').forEach(a => a.classList.toggle('aktif', a.dataset.aralik === aralik.tur));
+    $('#sOzelAralik').style.display = aralik.tur === 'ozel' ? '' : 'none';
+    $('#sBas').value = bas;
+    $('#sBit').value = bit;
+    const gecmis = await api(`${{ satis: '/satislar', teklif: '/teklifler', alis: '/alislar' }[mod]}?bas=${bas}&bit=${bit}`);
+    const kutu = $('#sGecmis');
+    if (!kutu) return;
+    const toplam = gecmis.reduce((t, b) => t + b.toplam, 0);
+    kutu.innerHTML = gecmis.length ? `<div class="baslik-satir kucuk-yazi" style="margin:4px 0 2px"><span>${gecmis.length} kayıt</span><span>Toplam <b>${para(toplam)}</b></span></div>
+      <ul class="liste">${gecmis.map(b => `<li>
+        <div class="${alisModu ? '' : 'tikla'}" style="flex:1" ${alisModu ? '' : `data-belge="${b.id}"`}><b>#${b.no} ${esc(b.musteri)}</b><br><span class="kucuk-yazi">${tarihYaz(b.tarih)} · ${b.kalemler.length} kalem
+        ${odemeli ? ' · ' + (b.odeme === 'veresiye' ? (alisModu ? 'borçlandık' : 'veresiye') : (alisModu ? 'ödendi' : 'peşin')) : b.satis_no ? ' · <span class="pozitif">satışa çevrildi</span>' : ''}${b.duzeltme ? ' · düzeltildi' : ''}</span></div>
+        <div class="sag"><b>${para(b.toplam)}</b>${alisModu ? '' : ` <span class="tikla" data-belge="${b.id}">📄</span>`}</div>
+        <button class="ikincil kucuk" data-duzenle="${b.id}" aria-label="Düzenle">✏️</button></li>`).join('')}</ul>`
+      : `<div class="bos">${ARALIKLAR.find(x => x[0] === aralik.tur)[1]} için kayıt yok</div>`;
+    kutu.querySelectorAll('[data-belge]').forEach(el => (el.onclick = () => belgeAc(mod, el.dataset.belge).catch(err => bildir(err.message, true))));
+    kutu.querySelectorAll('[data-duzenle]').forEach(el => (el.onclick = () => {
+      if (sepet.kalemler.length && Number(el.dataset.duzenle) !== sepet.duzenle_id && !onayla('Sepette ürünler var. Onlar silinip bu kayıt düzenlemeye açılsın mı?')) return;
+      belgeDuzenle(mod, el.dataset.duzenle).catch(err => bildir(err.message, true));
+    }));
+  }
+  icerik.querySelectorAll('[data-aralik]').forEach(a => (a.onclick = e => {
+    e.preventDefault();
+    aralik.tur = a.dataset.aralik;
+    localStorage.setItem('belgeAralik', JSON.stringify(aralik));
+    gecmisYukle();
+  }));
+  const ozelDegisti = () => {
+    aralik.bas = $('#sBas').value;
+    aralik.bit = $('#sBit').value;
+    localStorage.setItem('belgeAralik', JSON.stringify(aralik));
+    gecmisYukle();
+  };
+  $('#sBas').onchange = ozelDegisti;
+  $('#sBit').onchange = ozelDegisti;
+  gecmisYukle();
   ciz();
 }
 
