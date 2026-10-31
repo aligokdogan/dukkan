@@ -117,7 +117,9 @@ function alanHtml(a) {
       <button type="button" class="ikincil" data-barkod-oku="${a.ad}">📷</button></div></label>`;
   }
   const tip = a.tip === 'sayi' ? 'text" inputmode="decimal' : a.tip || 'text';
-  return `<label${sinif}>${esc(a.etiket)}<input type="${tip}" ${ortak} value="${esc(a.deger)}" ${a.ipucu ? `placeholder="${esc(a.ipucu)}"` : ''}></label>`;
+  const liste = a.oneriler ? `list="liste-${a.ad}"` : '';
+  return `<label${sinif}>${esc(a.etiket)}<input type="${tip}" ${ortak} ${liste} value="${esc(a.deger)}" ${a.ipucu ? `placeholder="${esc(a.ipucu)}"` : ''}>
+    ${a.oneriler ? `<datalist id="liste-${a.ad}">${a.oneriler.map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : ''}</label>`;
 }
 
 function onayla(mesaj) {
@@ -475,9 +477,15 @@ async function cariSayfasi(id) {
 
 async function stokSayfasi() {
   const sadeceKritik = sessionStorage.getItem('sadeceKritik') === '1';
+  let arac = sessionStorage.getItem('stokArac') || '';
+  const gruplar = await api('/urun-gruplari');
+  const seciliGrup = gruplar.includes(sessionStorage.getItem('stokGrup')) ? sessionStorage.getItem('stokGrup') : '';
   icerik.innerHTML = `
     <div class="baslik-satir"><h1>Stok</h1><button id="yeniUrun">+ Yeni ürün</button></div>
     <div class="arac"><button class="ikincil" id="barkodBul">📷 Barkodla bul</button><a class="dugme ikincil" href="#/sayim">🔢 Sayım yap</a></div>
+    <div class="sekme">${[['', 'Hepsi'], ['otomobil', '🚗 Otomobil'], ['traktor', '🚜 Traktör']].map(([k, ad]) =>
+      `<a href="#" data-arac="${k}">${ad}</a>`).join('')}</div>
+    <select id="grupFiltre" style="margin-bottom:12px"><option value="">📂 Tüm gruplar</option>${gruplar.map(g => `<option ${g === seciliGrup ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
     <div class="arac">
       <input type="search" id="urunAra" placeholder="Ürün adı, kod, marka veya raf ara…">
       <label class="yatay" style="margin:0"><input type="checkbox" id="kritikFiltre" ${sadeceKritik ? 'checked' : ''}> Sadece kritik</label>
@@ -490,25 +498,39 @@ async function stokSayfasi() {
   let zaman;
   $('#urunAra').oninput = () => { clearTimeout(zaman); zaman = setTimeout(yukle, 200); };
   $('#kritikFiltre').onchange = e => { sessionStorage.setItem('sadeceKritik', e.target.checked ? '1' : '0'); yukle(); };
+  $('#grupFiltre').onchange = e => { sessionStorage.setItem('stokGrup', e.target.value); yukle(); };
+  icerik.querySelectorAll('[data-arac]').forEach(s => (s.onclick = e => {
+    e.preventDefault();
+    arac = s.dataset.arac;
+    sessionStorage.setItem('stokArac', arac);
+    yukle();
+  }));
   async function yukle() {
-    const liste = await api(`/urunler?q=${encodeURIComponent($('#urunAra').value)}&kritik=${$('#kritikFiltre').checked ? 1 : 0}`);
+    icerik.querySelectorAll('[data-arac]').forEach(s => s.classList.toggle('aktif', s.dataset.arac === arac));
+    const liste = await api(`/urunler?q=${encodeURIComponent($('#urunAra').value)}&kritik=${$('#kritikFiltre').checked ? 1 : 0}&arac=${arac}&grup=${encodeURIComponent($('#grupFiltre').value)}`);
     const kutu = $('#urunListe');
     if (!kutu) return;
     kutu.innerHTML = liste.length ? `<table>
       <thead><tr><th>Ürün</th><th class="masaustu">Marka</th><th class="masaustu">Raf</th><th class="sag masaustu">Satış</th><th class="sag">Stok</th></tr></thead>
       <tbody>${liste.map(u => `<tr class="tikla" data-git="#/urun/${u.id}">
-        <td><b>${esc(u.ad)}</b> ${stokRozet(u)}<br><span class="kucuk-yazi">${esc(u.kod)}</span></td>
+        <td><b>${esc(u.ad)}</b> ${stokRozet(u)}<br><span class="kucuk-yazi">${[esc(u.kod), u.grup && esc(u.grup), !arac && u.arac === 'traktor' && '🚜'].filter(Boolean).join(' · ')}</span></td>
         <td class="masaustu">${esc(u.marka)}</td><td class="masaustu">${esc(u.raf)}</td>
         <td class="sag masaustu">${para(u.satis_fiyat)}</td>
         <td class="sag ${u.kritik > 0 && u.stok <= u.kritik ? 'negatif' : ''}"><b>${sayi(u.stok)}</b> <span class="kucuk-yazi">${esc(u.birim)}</span></td></tr>`).join('')}</tbody></table>`
-      : '<div class="bos">Ürün yok. "+ Yeni ürün" ile ekleyin.</div>';
+      : `<div class="bos">${arac || $('#grupFiltre').value ? 'Bu filtrede ürün yok' : 'Ürün yok. "+ Yeni ürün" ile ekleyin.'}</div>`;
     tiklamaBagla();
   }
   await yukle();
 }
 
-function urunFormu(u, { barkod = '', sonra } = {}) {
+// Yedek parçacıda yaygın gruplar; listede olmayan grup da yazılabilir.
+const HAZIR_GRUPLAR = ['Fren', 'Filtre', 'Motor', 'Yağ ve sıvılar', 'Elektrik', 'Aydınlatma', 'Süspansiyon ve direksiyon',
+  'Debriyaj ve şanzıman', 'Soğutma', 'Kayış ve zincir', 'Hidrolik', 'Kaporta', 'Lastik ve jant', 'Aksesuar', 'Diğer'];
+const ARAC_ADI = { otomobil: '🚗 Otomobil', traktor: '🚜 Traktör', ortak: '🔁 Ortak' };
+
+async function urunFormu(u, { barkod = '', sonra } = {}) {
   const yeni = !u;
+  const gruplar = [...new Set([...HAZIR_GRUPLAR, ...(await api('/urun-gruplari'))])];
   u = u || { birim: 'Adet', barkod };
   formAc({
     baslik: yeni ? 'Yeni ürün' : 'Ürünü düzenle',
@@ -518,6 +540,9 @@ function urunFormu(u, { barkod = '', sonra } = {}) {
       { ad: 'kod', etiket: 'Ürün / OEM kodu', deger: u.kod },
       { ad: 'marka', etiket: 'Marka', deger: u.marka },
       { ad: 'raf', etiket: 'Raf / Yer', deger: u.raf },
+      { ad: 'arac', etiket: 'Araç tipi', tip: 'secim', deger: yeni ? sessionStorage.getItem('stokArac') || '' : u.arac || '',
+        secenekler: [['', '— Seçilmedi —'], ['otomobil', 'Otomobil'], ['traktor', 'Traktör'], ['ortak', 'Ortak (ikisinde de kullanılır)']] },
+      { ad: 'grup', etiket: 'Grup', deger: u.grup, oneriler: gruplar, ipucu: 'Örn: Fren, Filtre…' },
       { ad: 'birim', etiket: 'Birim', tip: 'secim', deger: u.birim, secenekler: ['Adet', 'Takım', 'Litre', 'Kg', 'Metre', 'Kutu'].map(b => [b, b]) },
       ...(yeni ? [{ ad: 'stok', etiket: 'Mevcut stok', tip: 'sayi', ipucu: '0' }] : []),
       { ad: 'kritik', etiket: 'Kritik stok seviyesi', tip: 'sayi', deger: u.kritik || '', ipucu: 'Bu sayıya inince uyarı gelir' },
@@ -553,7 +578,7 @@ async function urunSayfasi(id) {
     <p><a href="#/stok">← Stok</a></p>
     <div class="kart ${kritik ? 'uyari-kart' : ''}">
       <div class="baslik-satir"><h1 style="margin:0">${esc(u.ad)} ${stokRozet(u)}</h1><button class="ikincil kucuk" id="duzenle">Düzenle</button></div>
-      <p class="kucuk-yazi">${[u.kod && 'Kod: ' + esc(u.kod), u.barkod && 'Barkod: ' + esc(u.barkod), u.marka && esc(u.marka), u.raf && 'Raf: ' + esc(u.raf)].filter(Boolean).join(' · ')}</p>
+      <p class="kucuk-yazi">${[u.kod && 'Kod: ' + esc(u.kod), u.barkod && 'Barkod: ' + esc(u.barkod), u.marka && esc(u.marka), u.raf && 'Raf: ' + esc(u.raf), ARAC_ADI[u.arac], u.grup && 'Grup: ' + esc(u.grup)].filter(Boolean).join(' · ')}</p>
       <div class="izgara">
         <div class="kutu"><div class="etiket">Stok</div><div class="deger ${kritik ? 'negatif' : ''}">${sayi(u.stok)} ${esc(u.birim)}</div></div>
         <div class="kutu"><div class="etiket">Kritik seviye</div><div class="deger">${u.kritik ? sayi(u.kritik) : '—'}</div></div>

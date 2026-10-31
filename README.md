@@ -28,6 +28,11 @@ Satış, teklif ve mal alımı listelerinde **Bugün / Bu hafta / Bu ay / Tarih 
 Kayıttaki **✏️** ile fiş tekrar sepete açılır; kaydedince eski kaydın stok ve hesap etkisi geri alınıp yenisi yazılır.
 Aynı ekrandan tek bir fiş tamamen silinebilir.
 
+## Stok grupları
+
+Her ürüne **Araç tipi** (Otomobil / Traktör / Ortak) ve **Grup** (Fren, Filtre, Motor, Yağ ve sıvılar…) verilebilir.
+Stok sayfasında üstteki sekmelerle araç tipine, açılır listeyle gruba göre süzülür. *Ortak* ürünler (yağ, akü, ampul) her iki sekmede de görünür.
+
 ## Barkod
 
 Ürün kartına barkod veya QR kod okutulabilir. Stok sayfasında (ana sayfadaki **Stok** düğmesi) **Barkodla bul**, **Sayım yap** (okuttukça sayar, bitince
