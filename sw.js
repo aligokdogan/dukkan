@@ -1,6 +1,6 @@
 // Uygulama dosyalarını telefonda saklar: internet olmadan da açılır.
 // Yeni sürüm yayınlanınca SURUM değiştirilir.
-const SURUM = 'dukkan-v13';
+const SURUM = 'dukkan-v14';
 const DOSYALAR = ['./', 'index.html', 'app.js', 'veri.js', 'style.css', 'manifest.json',
   'lib/zxing.min.js', 'lib/jspdf.min.js', 'lib/pdf-font.js', 'ikon/ikon-192.png', 'ikon/ikon-512.png', 'ikon/apple-touch-icon.png', 'ikon/ikon.svg'];
 

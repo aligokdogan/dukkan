@@ -261,8 +261,8 @@ async function ozetSayfasi() {
     `<a class="kare" href="${adres}" style="--renk:${renk}">${rozet}<span class="kare-ikon">${ikon}</span><span>${ad}</span></a>`;
   icerik.innerHTML = `${kurulumKarti()}${yedekHatirlatma(o.son_yedek, o.sayilar.cari + o.sayilar.urun > 0)}
     <div class="bakiye-kart">
-      <a class="bakiye" href="#/cariler"><span class="bakiye-etiket">⬇️ Alacağımız</span><b>${para(o.alacak)}</b><span class="bakiye-alt">Bize borçlu olanlar</span></a>
-      <a class="bakiye" href="#/cariler"><span class="bakiye-etiket">⬆️ Borcumuz</span><b>${para(o.borc)}</b><span class="bakiye-alt">Bizim ödeyeceklerimiz</span></a>
+      <a class="bakiye" href="#/cariler/alacak"><span class="bakiye-etiket">⬇️ Alacağımız</span><b>${para(o.alacak)}</b><span class="bakiye-alt">Bize borçlu olanlar</span></a>
+      <a class="bakiye" href="#/cariler/borc"><span class="bakiye-etiket">⬆️ Borcumuz</span><b>${para(o.borc)}</b><span class="bakiye-alt">Bizim ödeyeceklerimiz</span></a>
     </div>
     <div class="kareler">
       ${kare('#/satis', '🧾', 'Satış', '#1a7f37')}
@@ -324,9 +324,17 @@ function tiklamaBagla() {
 
 // ---------- Cariler ----------
 
-async function carilerSayfasi() {
+// filtre: 'alacak' = bize borçlu olanlar, 'borc' = bizim borçlu olduklarımız (ana sayfadaki karttan gelir)
+async function carilerSayfasi(filtre) {
+  if (filtre !== 'alacak' && filtre !== 'borc') filtre = '';
   icerik.innerHTML = `
     <div class="baslik-satir"><h1>Cariler</h1><button id="yeniCari">+ Yeni cari</button></div>
+    <div class="sekme">
+      <a href="#/cariler" class="${filtre ? '' : 'aktif'}">Hepsi</a>
+      <a href="#/cariler/alacak" class="${filtre === 'alacak' ? 'aktif' : ''}">Alacağımız</a>
+      <a href="#/cariler/borc" class="${filtre === 'borc' ? 'aktif' : ''}">Borcumuz</a>
+    </div>
+    <div id="cariToplam"></div>
     <div class="arac">
       <input type="search" id="cariAra" placeholder="İsim veya telefon ara…">
       <select id="cariTur" style="width:auto"><option value="">Hepsi</option><option value="musteri">Müşteriler</option><option value="tedarikci">Tedarikçiler</option></select>
@@ -339,16 +347,23 @@ async function carilerSayfasi() {
   $('#cariAra').oninput = () => { clearTimeout(zaman); zaman = setTimeout(yukle, 200); };
   $('#cariTur').onchange = yukle;
   async function yukle() {
-    const liste = await api(`/cariler?q=${encodeURIComponent($('#cariAra').value)}&tur=${$('#cariTur').value}`);
+    let liste = await api(`/cariler?q=${encodeURIComponent($('#cariAra').value)}&tur=${$('#cariTur').value}`);
     const kutu = $('#cariListe');
     if (!kutu) return;
+    if (filtre) {
+      liste = liste.filter(c => (filtre === 'alacak' ? c.bakiye > 0.005 : c.bakiye < -0.005))
+        .sort((a, b) => Math.abs(b.bakiye) - Math.abs(a.bakiye));
+      const toplam = liste.reduce((t, c) => t + Math.abs(c.bakiye), 0);
+      $('#cariToplam').innerHTML = `<div class="kart baslik-satir"><span>${filtre === 'alacak' ? 'Bize borçlu olanların toplamı' : 'Bizim ödeyeceklerimizin toplamı'} (${liste.length} kişi)</span>
+        <b class="${filtre === 'alacak' ? 'pozitif' : 'negatif'}" style="font-size:20px">${para(toplam)}</b></div>`;
+    }
     kutu.innerHTML = liste.length ? `<table>
       <thead><tr><th>Ad</th><th class="masaustu">Telefon</th><th class="masaustu">Son işlem</th><th class="sag">Durum</th></tr></thead>
       <tbody>${liste.map(c => `<tr class="tikla" data-git="#/cari/${c.id}">
         <td><b>${esc(c.ad)}</b> ${c.tur === 'tedarikci' ? '<span class="rozet tedarikci">Tedarikçi</span>' : ''}</td>
         <td class="masaustu">${esc(c.telefon)}</td><td class="masaustu">${tarihYaz(c.son_islem)}</td>
         <td class="sag">${bakiyeYaz(c.bakiye)}</td></tr>`).join('')}</tbody></table>`
-      : '<div class="bos">Kayıt yok. "+ Yeni cari" ile ekleyin.</div>';
+      : `<div class="bos">${filtre === 'alacak' ? 'Bize borcu olan kimse yok 👍' : filtre === 'borc' ? 'Kimseye borcumuz yok 👍' : 'Kayıt yok. "+ Yeni cari" ile ekleyin.'}</div>`;
     tiklamaBagla();
   }
   await yukle();
