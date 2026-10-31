@@ -580,6 +580,13 @@ async function ayarlarSayfasi() {
       </div>
     </div>
 
+    <div class="kart"><h2>🧪 Deneme verileri</h2>
+      <p class="kucuk-yazi">Uygulamayı denemek için örnek cariler, ürünler ve satışlar yükler. Mevcut verilerin yerine geçer.
+      Gerçek kullanıma başlarken "Tüm verileri sil" ile temizleyin.</p>
+      <div class="arac"><button class="ikincil" id="ornekYukle">Örnek verileri yükle</button>
+      <button class="kirmizi" id="hepsiniSil">Tüm verileri sil</button></div>
+    </div>
+
     <div class="kart"><h2>Son uyarılar</h2>
       ${kayitlar.length ? `<ul class="liste">${kayitlar.map(k => `<li><div>${esc(k.mesaj)}<br><span class="kucuk-yazi">${esc(k.tarih)}</span></div></li>`).join('')}</ul>`
         : '<div class="bos">Henüz uyarı yok</div>'}
@@ -601,6 +608,18 @@ async function ayarlarSayfasi() {
     bildir('Kaydedildi');
   };
   $('#yedekAl').onclick = () => yedekAl().then(() => setTimeout(yonlendir, 800));
+  $('#ornekYukle').onclick = async () => {
+    if (!onayla('Örnek veriler yüklensin mi? Bu telefondaki mevcut kayıtlar silinip yerine örnekler gelecek.')) return;
+    const r = await Yerel.ornekYukle();
+    bildir(`Örnek veriler yüklendi: ${r.cari} cari, ${r.urun} ürün`);
+    location.hash = '#/';
+  };
+  $('#hepsiniSil').onclick = async () => {
+    if (!onayla('TÜM cariler, ürünler ve hareketler silinsin mi? Bu geri alınamaz.')) return;
+    await Yerel.hepsiniSil();
+    bildir('Tüm veriler silindi');
+    location.hash = '#/';
+  };
   $('#yedekDosya').onchange = async e => {
     const dosya = e.target.files[0];
     if (!dosya) return;

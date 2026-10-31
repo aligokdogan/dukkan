@@ -353,6 +353,102 @@ async function yerelApi(adres, { method = 'GET', body } = {}) {
   throw new Error('Bilinmeyen işlem: ' + adres);
 }
 
+// Yolu kaydetmeden ve uyarı göstermeden çalıştırır (örnek veri yüklerken kullanılır).
+function icCagir(method, adres, body = {}) {
+  const u = new URL(adres, 'http://yerel');
+  for (const y of yollar) {
+    const m = y.yontem === method && u.pathname.match(y.re);
+    if (m) return y.isle(Object.fromEntries(y.anahtarlar.map((k, i) => [k, m[i + 1]])), u.searchParams, body);
+  }
+  throw new Error('Bilinmeyen işlem: ' + adres);
+}
+
+function gunOnce(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toLocaleDateString('sv-SE');
+}
+
+function ornekVeriOlustur() {
+  const dukkan = veri.ayarlar.dukkan_adi;
+  veri = bosVeri();
+  veri.ayarlar.dukkan_adi = dukkan || 'Örnek Oto Yedek Parça';
+
+  const cari = (ad, tur, telefon, adres, acilis) =>
+    icCagir('POST', '/cariler', { ad, tur, telefon, adres, acilis_bakiye: acilis }).id;
+  const usta = cari('Kaya Oto Servis', 'musteri', '0532 111 22 33', 'Sanayi Sitesi 3. Blok No:12', 4250);
+  const mehmet = cari('Mehmet Demir (Taksi)', 'musteri', '0544 222 33 44', '', 0);
+  const yildiz = cari('Yıldız Kaporta Boya', 'musteri', '0505 333 44 55', 'Sanayi Sitesi 1. Blok No:4', 1800);
+  const hasan = cari('Hasan Usta Motor', 'musteri', '0533 444 55 66', 'Küçük Sanayi No:27', 0);
+  const filo = cari('Özkan Nakliyat', 'musteri', '0212 555 66 77', 'Organize Sanayi 5. Cadde', 12500);
+  const bosch = cari('Anadolu Bosch Bayi', 'tedarikci', '0216 600 10 10', 'İstanbul', -18500);
+  const filtre = cari('Ege Filtre Dağıtım', 'tedarikci', '0232 700 20 20', 'İzmir', -6400);
+  const yag = cari('Marmara Madeni Yağ', 'tedarikci', '0262 800 30 30', 'Kocaeli', 0);
+
+  const urun = (ad, kod, marka, raf, birim, stok, kritik, alis, satis) =>
+    icCagir('POST', '/urunler', { ad, kod, marka, raf, birim, stok, kritik, alis_fiyat: alis, satis_fiyat: satis }).id;
+  const balataOn = urun('Fren Balatası Ön (Egea)', 'BP-4521', 'Bosch', 'A-1', 'Takım', 12, 4, 850, 1250);
+  const balataArka = urun('Fren Balatası Arka (Egea)', 'BP-4522', 'Bosch', 'A-1', 'Takım', 6, 3, 720, 1050);
+  const disk = urun('Fren Diski Ön (Clio 4)', 'BD-2210', 'Brembo', 'A-2', 'Adet', 2, 4, 1100, 1650);
+  const yagFiltre = urun('Yağ Filtresi (Doblo 1.3)', 'OF-118', 'Mann', 'B-1', 'Adet', 25, 10, 140, 230);
+  const havaFiltre = urun('Hava Filtresi (Corolla)', 'AF-305', 'Mann', 'B-1', 'Adet', 14, 6, 190, 320);
+  const polen = urun('Polen Filtresi (Focus)', 'CF-77', 'Bosch', 'B-2', 'Adet', 3, 5, 160, 280);
+  const motorYagi = urun('Motor Yağı 5W-30', 'MY-530', 'Castrol', 'C-1', 'Litre', 64, 20, 290, 420);
+  const antifriz = urun('Antifriz (Kırmızı)', 'AN-01', 'Petrol Ofisi', 'C-2', 'Litre', 18, 10, 95, 160);
+  const buji = urun('Buji (Benzinli)', 'SP-14', 'NGK', 'D-1', 'Adet', 40, 16, 85, 150);
+  const triger = urun('Triger Seti (Linea 1.3)', 'TS-900', 'Gates', 'D-3', 'Takım', 4, 2, 2400, 3400);
+  const aku = urun('Akü 60 Ah', 'AK-60', 'Mutlu', 'E-1', 'Adet', 5, 3, 2300, 3100);
+  const silecek = urun('Silecek Süpürgesi 55 cm', 'WB-55', 'Bosch', 'E-2', 'Adet', 10, 6, 180, 290);
+  const amortisor = urun('Amortisör Ön (Megane 3)', 'AM-301', 'Sachs', 'F-1', 'Adet', 3, 2, 1650, 2350);
+  const rot = urun('Rot Başı (Fiorino)', 'RB-12', 'Lemförder', 'F-2', 'Adet', 8, 4, 320, 520);
+  const ampul = urun('Far Ampulü H7', 'H7-55', 'Philips', 'G-1', 'Adet', 30, 10, 75, 140);
+  const kayis = urun('V Kayışı (Doblo)', 'VK-6PK', 'Gates', 'D-2', 'Adet', 7, 3, 260, 420);
+
+  const hareket = (urunId, tip, miktar, fiyat, cariId, gun, aciklama = '') => {
+    const h = icCagir('POST', `/urunler/${urunId}/hareket`, { tip, miktar, birim_fiyat: fiyat, cari_id: cariId, cariye_yaz: !!cariId, tarih: gunOnce(gun), aciklama });
+    return h;
+  };
+  // Alışlar
+  hareket(motorYagi, 'giris', 40, 290, yag, 24, 'Fatura 2041');
+  hareket(buji, 'giris', 20, 85, bosch, 20, 'Fatura A-778');
+  hareket(yagFiltre, 'giris', 20, 140, filtre, 18, 'Fatura E-3310');
+  hareket(havaFiltre, 'giris', 10, 190, filtre, 18, 'Fatura E-3310');
+  // Satışlar
+  hareket(balataOn, 'cikis', 2, 1250, usta, 16);
+  hareket(motorYagi, 'cikis', 8, 420, usta, 16);
+  hareket(yagFiltre, 'cikis', 4, 230, usta, 16);
+  hareket(disk, 'cikis', 2, 1650, yildiz, 14);
+  hareket(aku, 'cikis', 1, 3100, mehmet, 12, 'Nakit ödedi');
+  hareket(triger, 'cikis', 1, 3400, hasan, 11);
+  hareket(kayis, 'cikis', 1, 420, hasan, 11);
+  hareket(motorYagi, 'cikis', 20, 400, filo, 9, '5 araç bakım');
+  hareket(yagFiltre, 'cikis', 5, 220, filo, 9, '5 araç bakım');
+  hareket(havaFiltre, 'cikis', 5, 300, filo, 9, '5 araç bakım');
+  hareket(polen, 'cikis', 3, 280, filo, 9, '5 araç bakım');
+  hareket(buji, 'cikis', 8, 150, usta, 7);
+  hareket(amortisor, 'cikis', 2, 2350, yildiz, 6);
+  hareket(ampul, 'cikis', 4, 140, null, 5, 'Perakende');
+  hareket(silecek, 'cikis', 2, 290, null, 4, 'Perakende');
+  hareket(balataArka, 'cikis', 2, 1050, usta, 3);
+  hareket(rot, 'cikis', 2, 520, hasan, 2);
+  hareket(antifriz, 'cikis', 6, 160, null, 1, 'Perakende');
+  // Mehmet'in akü satışı nakit: tahsilatı da yaz
+  const cariHareket = (id, tip, tutar, gun, aciklama) => icCagir('POST', `/cariler/${id}/hareket`, { tip, tutar, tarih: gunOnce(gun), aciklama });
+  cariHareket(mehmet, 'alacak', 3100, 12, 'Nakit');
+  cariHareket(usta, 'alacak', 5000, 10, 'Havale');
+  cariHareket(filo, 'alacak', 10000, 5, 'Çek - vadesi 30 gün');
+  cariHareket(yildiz, 'alacak', 2000, 3, 'Nakit');
+  cariHareket(bosch, 'borc', 10000, 8, 'Havale ile ödendi');
+  cariHareket(filtre, 'borc', 6400, 4, 'Havale ile ödendi');
+
+  // Açılış kayıtları bir ay önceye
+  for (const h of [...veri.cariHareketler, ...veri.stokHareketler]) {
+    if (/^Açılış/.test(h.aciklama)) h.tarih = gunOnce(30);
+  }
+  // Kritikte olanlar için açılışta uyarı penceresi çıkmasın, Özet'te görünsün yeter
+  kritikKontrol();
+}
+
 const Yerel = {
   api: yerelApi,
   kritikUyariAyarla: fn => (kritikUyari = fn),
@@ -383,6 +479,27 @@ const Yerel = {
     }
     return csvYap([['kod', 'Kod'], ['ad', 'Ad'], ['marka', 'Marka'], ['raf', 'Raf'], ['birim', 'Birim'], ['stok', 'Stok'], ['kritik', 'Kritik'], ['alis_fiyat', 'Alış'], ['satis_fiyat', 'Satış']],
       [...veri.urunler].sort(adSirala));
+  },
+
+  async ornekYukle() {
+    await veriYukle();
+    const yedek = JSON.stringify(veri);
+    try {
+      ornekVeriOlustur();
+    } catch (e) {
+      veri = JSON.parse(yedek);
+      throw e;
+    }
+    await veriKaydet();
+    return { cari: veri.cariler.length, urun: veri.urunler.length };
+  },
+
+  async hepsiniSil() {
+    await veriYukle();
+    const dukkan = veri.ayarlar.dukkan_adi;
+    veri = bosVeri();
+    veri.ayarlar.dukkan_adi = dukkan;
+    await veriKaydet();
   },
 
   async kritikSayisi() {
