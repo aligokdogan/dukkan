@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f4e79">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Dükkan Takip</title>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Dükkan">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="ikon/ikon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="ikon/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="ust">
+    <a href="#/" class="logo" id="dukkanAdi">Dükkan Takip</a>
+    <nav class="menu">
+      <a href="#/" data-sayfa="ozet">Özet</a>
+      <a href="#/cariler" data-sayfa="cariler">Cariler</a>
+      <a href="#/stok" data-sayfa="stok">Stok</a>
+      <a href="#/ayarlar" data-sayfa="ayarlar">Ayarlar</a>
+    </nav>
+  </header>
+  <main id="icerik"></main>
+  <nav class="alt-menu">
+    <a href="#/" data-sayfa="ozet"><span>🏠</span>Özet</a>
+    <a href="#/cariler" data-sayfa="cariler"><span>👥</span>Cariler</a>
+    <a href="#/stok" data-sayfa="stok"><span>📦</span>Stok</a>
+    <a href="#/ayarlar" data-sayfa="ayarlar"><span>⚙️</span>Ayarlar</a>
+  </nav>
+  <dialog id="pencere"><form method="dialog" id="pencereForm"></form></dialog>
+  <div id="bildirim"></div>
+  <script src="veri.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
