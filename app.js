@@ -45,8 +45,8 @@ function bildir(mesaj, hata = false) {
 function bakiyeYaz(b) {
   if (Math.abs(b) < 0.005) return '<span class="kucuk-yazi">0,00 ₺</span>';
   return b > 0
-    ? `<span class="pozitif">${para(b)}</span> <span class="kucuk-yazi">alacak</span>`
-    : `<span class="negatif">${para(-b)}</span> <span class="kucuk-yazi">borç</span>`;
+    ? `<span class="pozitif">${para(b)}</span> <span class="kucuk-yazi">bize borçlu</span>`
+    : `<span class="negatif">${para(-b)}</span> <span class="kucuk-yazi">biz borçluyuz</span>`;
 }
 
 function stokRozet(u) {
@@ -210,6 +210,7 @@ async function yonlendir() {
   document.querySelectorAll('[data-sayfa]').forEach(a => a.classList.toggle('aktif', a.dataset.sayfa === aktif));
   try {
     await (sayfalar[ad] || ozetSayfasi)(id);
+    window.scrollTo(0, 0);
   } catch (e) {
     icerik.innerHTML = `<div class="kart bos">${esc(e.message)}</div>`;
   }
@@ -224,8 +225,8 @@ async function ozetSayfasi() {
   document.title = o.dukkan;
   icerik.innerHTML = `${kurulumKarti()}${yedekHatirlatma(o.son_yedek, o.sayilar.cari + o.sayilar.urun > 0)}
     <div class="izgara">
-      <div class="kutu"><div class="etiket">Toplam alacağımız</div><div class="deger pozitif">${para(o.alacak)}</div></div>
-      <div class="kutu"><div class="etiket">Toplam borcumuz</div><div class="deger negatif">${para(o.borc)}</div></div>
+      <div class="kutu"><div class="etiket">Bize borçlu olanlar</div><div class="deger pozitif">${para(o.alacak)}</div></div>
+      <div class="kutu"><div class="etiket">Bizim borçlarımız</div><div class="deger negatif">${para(o.borc)}</div></div>
       <div class="kutu"><div class="etiket">Kritik stoktaki ürün</div><div class="deger ${o.kritik.length ? 'negatif' : ''}">${o.kritik.length}</div></div>
       <div class="kutu"><div class="etiket">Stok değeri (alış)</div><div class="deger">${para(o.sayilar.stok_degeri)}</div></div>
     </div>
@@ -297,7 +298,7 @@ async function carilerSayfasi() {
       <select id="cariTur" style="width:auto"><option value="">Hepsi</option><option value="musteri">Müşteriler</option><option value="tedarikci">Tedarikçiler</option></select>
     </div>
     <div class="kart" id="cariListe"><div class="bos">Yükleniyor…</div></div>
-    <p class="kucuk-yazi">Alacak: cari bize borçlu. Borç: biz cariye borçluyuz. <a href="#" data-csv="cariler">Excel'e aktar (CSV)</a></p>`;
+    <p class="kucuk-yazi">Yeşil: bize borcu var. Kırmızı: bizim ona borcumuz var. <a href="#" data-csv="cariler">Excel'e aktar (CSV)</a></p>`;
   csvBagla();
   $('#yeniCari').onclick = () => cariFormu();
   let zaman;
@@ -308,7 +309,7 @@ async function carilerSayfasi() {
     const kutu = $('#cariListe');
     if (!kutu) return;
     kutu.innerHTML = liste.length ? `<table>
-      <thead><tr><th>Ad</th><th class="masaustu">Telefon</th><th class="masaustu">Son işlem</th><th class="sag">Bakiye</th></tr></thead>
+      <thead><tr><th>Ad</th><th class="masaustu">Telefon</th><th class="masaustu">Son işlem</th><th class="sag">Durum</th></tr></thead>
       <tbody>${liste.map(c => `<tr class="tikla" data-git="#/cari/${c.id}">
         <td><b>${esc(c.ad)}</b> ${c.tur === 'tedarikci' ? '<span class="rozet tedarikci">Tedarikçi</span>' : ''}</td>
         <td class="masaustu">${esc(c.telefon)}</td><td class="masaustu">${tarihYaz(c.son_islem)}</td>
@@ -332,10 +333,15 @@ function cariFormu(c) {
       { ad: 'vergi_no', etiket: 'Vergi / TC No', deger: c.vergi_no },
       { ad: 'adres', etiket: 'Adres', tip: 'metin-alani', deger: c.adres, tam: true },
       { ad: 'notlar', etiket: 'Not', tip: 'metin-alani', deger: c.notlar, tam: true },
-      ...(yeni ? [{ ad: 'acilis_bakiye', etiket: 'Açılış bakiyesi (bize borcu varsa +, bizim borcumuzsa −)', tip: 'sayi', ipucu: '0', tam: true }] : []),
+      ...(yeni ? [
+        { ad: 'acilis_bakiye', etiket: 'Eskiden kalan borç (₺)', tip: 'sayi', ipucu: 'Yoksa boş bırakın' },
+        { ad: 'acilis_yon', etiket: 'Kimin borcu?', tip: 'secim', deger: c.tur === 'tedarikci' ? 'biz' : 'o', secenekler: [['o', 'O bize borçlu'], ['biz', 'Biz ona borçluyuz']] },
+      ] : []),
     ],
     kaydet: async v => {
       if (yeni) {
+        const tutar = Math.abs(Number(String(v.acilis_bakiye || 0).replace(',', '.')) || 0);
+        v.acilis_bakiye = v.acilis_yon === 'biz' ? -tutar : tutar;
         const r = await api('/cariler', { method: 'POST', body: v });
         bildir('Cari eklendi');
         location.hash = '#/cari/' + r.id;
@@ -350,6 +356,17 @@ function cariFormu(c) {
 
 async function cariSayfasi(id) {
   const { cari: c, hareketler } = await api('/cariler/' + id);
+  const tedarikci = c.tur === 'tedarikci';
+  // Muhasebe dili yerine dükkanda konuşulan dil
+  const islemAdi = tip => tedarikci
+    ? (tip === 'alacak' ? 'Mal aldık' : 'Ödeme yaptık')
+    : (tip === 'borc' ? 'Veresiye' : 'Para aldık');
+  const eskiKayit = h => /^(Açılış bakiyesi|Eskiden kalan)/.test(h.aciklama || '');
+  const durumYazi = b => Math.abs(b) < 0.005
+    ? '<span class="kucuk-yazi">Hesap kapalı, kimsenin borcu yok</span>'
+    : b > 0
+      ? `Bize borcu: <b class="pozitif">${para(b)}</b>`
+      : `Bizim ona borcumuz: <b class="negatif">${para(-b)}</b>`;
   icerik.innerHTML = `
     <p><a href="#/cariler">← Cariler</a></p>
     <div class="kart">
@@ -357,17 +374,17 @@ async function cariSayfasi(id) {
         <button class="ikincil kucuk" id="duzenle">Düzenle</button></div>
       <p class="kucuk-yazi">${[c.telefon && `<a href="tel:${esc(c.telefon)}">${esc(c.telefon)}</a>`, esc(c.email), esc(c.adres)].filter(Boolean).join(' · ')}</p>
       ${c.notlar ? `<p>${esc(c.notlar)}</p>` : ''}
-      <div style="font-size:22px;margin:8px 0">Bakiye: ${bakiyeYaz(c.bakiye)}</div>
-      <div class="arac">
-        <button class="yesil" id="borcEkle">+ Borçlandır (satış / veresiye)</button>
-        <button id="alacakEkle">− Ödeme / Tahsilat</button>
+      <div style="font-size:22px;margin:8px 0">${durumYazi(c.bakiye)}</div>
+      <div class="arac">${tedarikci
+        ? '<button class="yesil" id="alacakEkle">📦 Mal aldım (veresiye)</button><button id="borcEkle">💵 Ödeme yaptım</button>'
+        : '<button class="yesil" id="borcEkle">📝 Veresiye yaz</button><button id="alacakEkle">💵 Para aldım</button>'}
       </div>
     </div>
-    <div class="kart"><h2>Hesap ekstresi</h2>
-      ${hareketler.length ? `<table><thead><tr><th>Tarih</th><th>Açıklama</th><th class="sag">Tutar</th><th class="sag masaustu">Bakiye</th><th></th></tr></thead>
-      <tbody>${hareketler.map(h => `<tr><td>${tarihYaz(h.tarih)}</td><td>${esc(h.aciklama) || (h.tip === 'borc' ? 'Borç' : 'Ödeme')}</td>
-        <td class="sag ${h.tip === 'borc' ? 'pozitif' : 'negatif'}">${h.tip === 'borc' ? '+' : '−'}${para(h.tutar)}</td>
-        <td class="sag masaustu">${para(h.bakiye)}</td>
+    <div class="kart"><h2>Hesap geçmişi</h2>
+      ${hareketler.length ? `<table><thead><tr><th>Tarih</th><th>İşlem</th><th class="sag">Tutar</th><th class="sag masaustu">Sonra kalan</th><th></th></tr></thead>
+      <tbody>${hareketler.map(h => `<tr><td>${tarihYaz(h.tarih)}</td><td>${eskiKayit(h) ? 'Eskiden kalan borç' : islemAdi(h.tip)}${h.aciklama && !eskiKayit(h) ? `<br><span class="kucuk-yazi">${esc(h.aciklama)}</span>` : ''}</td>
+        <td class="sag ${h.tip === 'borc' ? 'pozitif' : 'negatif'}">${para(h.tutar)}</td>
+        <td class="sag masaustu">${bakiyeYaz(h.bakiye)}</td>
         <td class="sag"><button class="metin" data-sil="${h.id}" title="Sil">✕</button></td></tr>`).join('')}</tbody></table>`
         : '<div class="bos">Henüz hareket yok</div>'}
     </div>
@@ -375,11 +392,13 @@ async function cariSayfasi(id) {
 
   $('#duzenle').onclick = () => cariFormu(c);
   const hareketFormu = tip => formAc({
-    baslik: tip === 'borc' ? `${c.ad} - Borçlandır` : `${c.ad} - Ödeme / Tahsilat`,
+    baslik: `${c.ad} - ${islemAdi(tip)}`,
     alanlar: [
-      { ad: 'tutar', etiket: 'Tutar (₺)', tip: 'sayi', gerekli: true },
+      { ad: 'tutar', etiket: tedarikci
+        ? (tip === 'alacak' ? 'Aldığımız malın tutarı (₺)' : 'Ödediğimiz tutar (₺)')
+        : (tip === 'borc' ? 'Veresiye tutarı (₺)' : 'Aldığımız para (₺)'), tip: 'sayi', gerekli: true },
       { ad: 'tarih', etiket: 'Tarih', tip: 'date', deger: bugun() },
-      { ad: 'aciklama', etiket: 'Açıklama', tam: true, ipucu: tip === 'borc' ? 'Örn: Fren balatası, fatura no…' : 'Örn: Nakit, havale…' },
+      { ad: 'aciklama', etiket: 'Açıklama', tam: true, ipucu: (tip === 'borc') !== tedarikci ? 'Örn: Fren balatası, fatura no…' : 'Örn: Nakit, havale…' },
     ],
     kaydet: async v => {
       await api(`/cariler/${c.id}/hareket`, { method: 'POST', body: { ...v, tip } });

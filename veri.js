@@ -191,7 +191,7 @@ yol('POST', '/cariler', (p, q, b) => {
   veri.cariler.push(c);
   const acilis = sayiAl(b.acilis_bakiye);
   if (acilis) {
-    veri.cariHareketler.push({ id: yeniId('cariHareket'), cari_id: c.id, tarih: yerelBugun(), tip: acilis > 0 ? 'borc' : 'alacak', tutar: Math.abs(acilis), aciklama: 'Açılış bakiyesi' });
+    veri.cariHareketler.push({ id: yeniId('cariHareket'), cari_id: c.id, tarih: yerelBugun(), tip: acilis > 0 ? 'borc' : 'alacak', tutar: Math.abs(acilis), aciklama: 'Eskiden kalan borç' });
   }
   return { id: c.id };
 });
@@ -443,7 +443,7 @@ function ornekVeriOlustur() {
 
   // Açılış kayıtları bir ay önceye
   for (const h of [...veri.cariHareketler, ...veri.stokHareketler]) {
-    if (/^Açılış/.test(h.aciklama)) h.tarih = gunOnce(30);
+    if (/^(Açılış|Eskiden kalan)/.test(h.aciklama)) h.tarih = gunOnce(30);
   }
   // Kritikte olanlar için açılışta uyarı penceresi çıkmasın, Özet'te görünsün yeter
   kritikKontrol();
