@@ -26,7 +26,7 @@ titreşir ve ekranda uyarı çıkar. Uyarıdaki **WhatsApp'tan gönder** düğme
 
 ## Barkod
 
-Ürün kartına barkod veya QR kod okutulabilir. Stok sayfasında **Barkodla bul**, **Sayım yap** (okuttukça sayar, bitince
+Ürün kartına barkod veya QR kod okutulabilir. Stok sayfasında (ana sayfadaki **Stok** düğmesi) **Barkodla bul**, **Sayım yap** (okuttukça sayar, bitince
 stokları günceller, yarıda kalırsa kaldığı yerden devam eder) satış, teklif, mal alımı ve sipariş ekranlarında **📷 Barkod** ile ürün eklenir.
 Okuma iPhone'da uygulamayla gelen ZXing kütüphanesiyle (`lib/`, MIT lisansı), Android Chrome'da telefonun kendi okuyucusuyla yapılır.
 

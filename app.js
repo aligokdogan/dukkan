@@ -244,19 +244,17 @@ async function ozetSayfasi() {
   const kare = (adres, ikon, ad, renk, rozet = '') =>
     `<a class="kare" href="${adres}" style="--renk:${renk}">${rozet}<span class="kare-ikon">${ikon}</span><span>${ad}</span></a>`;
   icerik.innerHTML = `${kurulumKarti()}${yedekHatirlatma(o.son_yedek, o.sayilar.cari + o.sayilar.urun > 0)}
+    <div class="bakiye-kart">
+      <a class="bakiye" href="#/cariler"><span class="bakiye-etiket">⬇️ Alacağımız</span><b>${para(o.alacak)}</b><span class="bakiye-alt">Bize borçlu olanlar</span></a>
+      <a class="bakiye" href="#/cariler"><span class="bakiye-etiket">⬆️ Borcumuz</span><b>${para(o.borc)}</b><span class="bakiye-alt">Bizim ödeyeceklerimiz</span></a>
+    </div>
     <div class="kareler">
       ${kare('#/satis', '🧾', 'Satış', '#1a7f37')}
       ${kare('#/teklif', '📄', 'Teklif', '#0e7490')}
       ${kare('#/stok', '📦', 'Stok', '#1f4e79', o.kritik.length ? `<span class="kare-rozet">${o.kritik.length}</span>` : '')}
       ${kare('#/cariler', '👥', 'Müşteri / Tedarikçi', '#6d28d9')}
       ${kare('#/alis', '📥', 'Satın alma', '#c2410c')}
-      ${kare('#/sayim', '🔢', 'Stok sayımı', '#4d7c0f')}
-      <a class="kare" href="#" id="kareBarkod" style="--renk:#374151"><span class="kare-ikon">📷</span><span>Barkodla bul</span></a>
       ${kare('#/ayarlar', '⚙️', 'Ayarlar', '#6b7280')}
-    </div>
-    <div class="izgara">
-      <div class="kutu tikla" data-git="#/cariler"><div class="etiket">Bize borçlu olanlar</div><div class="deger pozitif">${para(o.alacak)}</div></div>
-      <div class="kutu tikla" data-git="#/cariler"><div class="etiket">Bizim borçlarımız</div><div class="deger negatif">${para(o.borc)}</div></div>
     </div>
     ${o.kritik.length ? `<div class="kart uyari-kart">
       <div class="baslik-satir"><h2>⚠️ Kritik stok (${o.kritik.length})</h2><a class="dugme yesil kucuk" href="#/siparis">🛒 Sipariş ver</a></div>
@@ -269,7 +267,6 @@ async function ozetSayfasi() {
   tiklamaBagla();
   kurulumKartiBagla();
   rozetGuncelle();
-  $('#kareBarkod').onclick = e => { e.preventDefault(); barkodlaBul(); };
   const hy = $('#hizliYedek');
   if (hy) hy.onclick = yedekAl;
 }
