@@ -119,3 +119,7 @@ dialog .dugmeler { display: flex; gap: 8px; justify-content: flex-end; margin-to
 }
 @media (min-width: 721px) { body { padding-bottom: 0; } }
 .liste li > :last-child { white-space: nowrap; }
+
+.siparis-alt { position: sticky; bottom: calc(66px + env(safe-area-inset-bottom)); box-shadow: 0 -4px 12px rgba(0,0,0,.08); }
+.siparis-alt label { margin-bottom: 8px; }
+@media (min-width: 721px) { .siparis-alt { bottom: 0; } }

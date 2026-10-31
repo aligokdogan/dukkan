@@ -308,6 +308,19 @@ yol('DELETE', '/stok-hareket/:id', p => {
   return { tamam: true };
 });
 
+// Sipariş ekranı için: ürünler + en son hangi tedarikçiden alındığı
+yol('GET', '/siparis', () => {
+  const son = {};
+  for (const h of veri.stokHareketler) {
+    if (h.tip === 'giris' && h.cari_id) son[h.urun_id] = h.cari_id;
+  }
+  return {
+    urunler: [...veri.urunler].sort(adSirala).map(u => ({ ...u, kritikte: kritikMi(u), son_tedarikci: son[u.id] || null })),
+    tedarikciler: veri.cariler.filter(c => c.tur === 'tedarikci').sort(adSirala),
+    dukkan: veri.ayarlar.dukkan_adi || '',
+  };
+});
+
 yol('GET', '/ayarlar', () => ({ ...veri.ayarlar }));
 
 yol('PUT', '/ayarlar', (p, q, b) => {

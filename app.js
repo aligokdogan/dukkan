@@ -162,10 +162,11 @@ async function telefonBildirimi(baslik, metin, adres) {
   return true;
 }
 
-function whatsappAdresi(metin) {
-  const no = (localStorage.getItem('uyariTelefon') || '').replace(/\D/g, '').replace(/^0/, '90').replace(/^5/, '905');
+function waAdresi(telefon, metin) {
+  const no = String(telefon || '').replace(/\D/g, '').replace(/^0/, '90').replace(/^5/, '905');
   return `https://wa.me/${no}?text=${encodeURIComponent(metin)}`;
 }
+
 
 async function rozetGuncelle() {
   if (!('setAppBadge' in navigator)) return;
@@ -187,9 +188,10 @@ Yerel.kritikUyariAyarla(async (urunler, metin) => {
     <ul class="liste">${urunler.map(u => `<li><b>${esc(u.ad)}</b><span class="negatif"><b>${sayi(u.stok)}</b> ${esc(u.birim)} kaldı</span></li>`).join('')}</ul>
     <p class="kucuk-yazi">Kritik seviyeye indi. Sipariş vermeyi unutmayın.</p>
     <div class="dugmeler"><button type="button" class="ikincil" data-kapat>Tamam</button>
-    <a class="dugme yesil" href="${whatsappAdresi(metin)}" target="_blank" rel="noopener">WhatsApp'tan gönder</a></div>`;
+    <a class="dugme yesil" href="#/siparis" data-kapat2>🛒 Sipariş ver</a></div>`;
   f.onsubmit = e => e.preventDefault();
   f.querySelector('[data-kapat]').onclick = () => p.close();
+  f.querySelector('[data-kapat2]').onclick = () => p.close();
   p.showModal();
 });
 
@@ -202,11 +204,12 @@ const sayfalar = {
   stok: stokSayfasi,
   urun: urunSayfasi,
   ayarlar: ayarlarSayfasi,
+  siparis: siparisSayfasi,
 };
 
 async function yonlendir() {
   const [, ad = '', id] = location.hash.replace(/^#/, '').split('/');
-  const aktif = { '': 'ozet', cari: 'cariler', urun: 'stok' }[ad] || ad;
+  const aktif = { '': 'ozet', cari: 'cariler', urun: 'stok', siparis: 'stok' }[ad] || ad;
   document.querySelectorAll('[data-sayfa]').forEach(a => a.classList.toggle('aktif', a.dataset.sayfa === aktif));
   try {
     await (sayfalar[ad] || ozetSayfasi)(id);
@@ -231,7 +234,7 @@ async function ozetSayfasi() {
       <div class="kutu"><div class="etiket">Stok değeri (alış)</div><div class="deger">${para(o.sayilar.stok_degeri)}</div></div>
     </div>
     <div class="kart ${o.kritik.length ? 'uyari-kart' : ''}">
-      <div class="baslik-satir"><h2>Kritik stok</h2>${o.kritik.length ? '<a class="dugme yesil kucuk" id="kritikPaylas" target="_blank" rel="noopener">WhatsApp\'tan gönder</a>' : ''}</div>
+      <div class="baslik-satir"><h2>Kritik stok</h2>${o.kritik.length ? '<a class="dugme yesil kucuk" href="#/siparis">🛒 Sipariş ver</a>' : ''}</div>
       ${o.kritik.length ? `<ul class="liste">${o.kritik.map(u => `
         <li class="tikla" data-git="#/urun/${u.id}"><div><b>${esc(u.ad)}</b> <span class="kucuk-yazi">${esc(u.kod)}</span><br>
         <span class="kucuk-yazi">Kritik seviye: ${sayi(u.kritik)}</span></div>
@@ -255,8 +258,6 @@ async function ozetSayfasi() {
   tiklamaBagla();
   kurulumKartiBagla();
   rozetGuncelle();
-  const kp = $('#kritikPaylas');
-  if (kp) kp.href = whatsappAdresi(Yerel.kritikMetni(o.kritik));
   const hy = $('#hizliYedek');
   if (hy) hy.onclick = yedekAl;
 }
@@ -376,7 +377,8 @@ async function cariSayfasi(id) {
       ${c.notlar ? `<p>${esc(c.notlar)}</p>` : ''}
       <div style="font-size:22px;margin:8px 0">${durumYazi(c.bakiye)}</div>
       <div class="arac">${tedarikci
-        ? '<button class="yesil" id="alacakEkle">📦 Mal aldım (veresiye)</button><button id="borcEkle">💵 Ödeme yaptım</button>'
+        ? `<button class="yesil" id="alacakEkle">📦 Mal aldım (veresiye)</button><button id="borcEkle">💵 Ödeme yaptım</button>
+           <a class="dugme ikincil" href="#/siparis/${c.id}">🛒 Sipariş ver</a>`
         : '<button class="yesil" id="borcEkle">📝 Veresiye yaz</button><button id="alacakEkle">💵 Para aldım</button>'}
       </div>
     </div>
@@ -426,7 +428,7 @@ async function cariSayfasi(id) {
 async function stokSayfasi() {
   const sadeceKritik = sessionStorage.getItem('sadeceKritik') === '1';
   icerik.innerHTML = `
-    <div class="baslik-satir"><h1>Stok</h1><button id="yeniUrun">+ Yeni ürün</button></div>
+    <div class="baslik-satir"><h1>Stok</h1><div class="arac" style="margin:0"><a class="dugme ikincil" href="#/siparis">🛒 Sipariş</a><button id="yeniUrun">+ Yeni ürün</button></div></div>
     <div class="arac">
       <input type="search" id="urunAra" placeholder="Ürün adı, kod, marka veya raf ara…">
       <label class="yatay" style="margin:0"><input type="checkbox" id="kritikFiltre" ${sadeceKritik ? 'checked' : ''}> Sadece kritik</label>
@@ -561,6 +563,97 @@ async function urunSayfasi(id) {
   };
 }
 
+// ---------- Tedarikçiye sipariş ----------
+
+async function siparisSayfasi(cariId) {
+  const { urunler, tedarikciler, dukkan } = await api('/siparis');
+  if (!tedarikciler.length) {
+    icerik.innerHTML = `<h1>Sipariş</h1><div class="kart bos">Önce Cariler'den bir tedarikçi ekleyin (türü "Tedarikçi" olsun, telefonu yazılı olsun).</div>`;
+    return;
+  }
+  const secili = Number(cariId) || tedarikciler[0].id;
+  const oneri = u => Math.max(1, Math.ceil(u.kritik * 2 - u.stok));
+  icerik.innerHTML = `
+    <p><a href="#/stok">← Stok</a></p>
+    <h1>Tedarikçiye sipariş</h1>
+    <div class="kart">
+      <label>Tedarikçi<select id="sTedarikci">${tedarikciler.map(t =>
+        `<option value="${t.id}" ${t.id === secili ? 'selected' : ''}>${esc(t.ad)}${t.telefon ? '' : ' (telefon yok)'}</option>`).join('')}</select></label>
+      <input type="search" id="sAra" placeholder="Ürün ara…">
+    </div>
+    <div class="kart"><h2>Ürünler <span class="kucuk-yazi" id="sSayac"></span></h2>
+      <p class="kucuk-yazi">Kritik seviyedekiler işaretli gelir. Adetleri değiştirebilirsiniz.</p>
+      <ul class="liste" id="sListe"></ul>
+    </div>
+ <div class="kart siparis-alt">
+      <label>Not (isteğe bağlı)<input id="sNot" placeholder="Örn: Yarın öğlene kadar lazım"></label>
+      <a class="dugme yesil" id="sGonder" target="_blank" rel="noopener" style="width:100%">WhatsApp'tan siparişi gönder</a>
+      <p class="kucuk-yazi" id="sUyari"></p>
+    </div>`;
+
+  const isaret = new Map();  // urun id -> adet
+  const tedarikci = () => tedarikciler.find(t => t.id === Number($('#sTedarikci').value));
+
+  function varsayilanlar() {
+    isaret.clear();
+    const tid = Number($('#sTedarikci').value);
+    for (const u of urunler) {
+      if (u.kritikte && (!u.son_tedarikci || u.son_tedarikci === tid)) isaret.set(u.id, oneri(u));
+    }
+  }
+
+  function ciz() {
+    const tid = Number($('#sTedarikci').value);
+    const ara = aramaMetni($('#sAra').value);
+    const sira = u => (isaret.has(u.id) ? 0 : u.kritikte ? 1 : u.son_tedarikci === tid ? 2 : 3);
+    const liste = urunler
+      .filter(u => !ara || aramaMetni(u.ad + ' ' + u.kod + ' ' + u.marka).includes(ara))
+      .sort((a, b) => sira(a) - sira(b) || a.ad.localeCompare(b.ad, 'tr'));
+    $('#sListe').innerHTML = liste.map(u => `<li>
+      <label class="yatay" style="margin:0;flex:1"><input type="checkbox" data-u="${u.id}" ${isaret.has(u.id) ? 'checked' : ''}>
+        <span><b>${esc(u.ad)}</b> ${u.kritikte ? '<span class="rozet kritik">KRİTİK</span>' : ''}<br>
+        <span class="kucuk-yazi">Stok: ${sayi(u.stok)} ${esc(u.birim)}${u.kod ? ' · ' + esc(u.kod) : ''}</span></span></label>
+      <input type="text" inputmode="decimal" data-adet="${u.id}" value="${isaret.has(u.id) ? isaret.get(u.id) : ''}" placeholder="Adet" style="width:70px;text-align:center">
+    </li>`).join('') || '<li class="bos">Ürün yok</li>';
+    $('#sListe').querySelectorAll('[data-u]').forEach(k => (k.onchange = () => {
+      const id = Number(k.dataset.u);
+      const u = urunler.find(x => x.id === id);
+      if (k.checked) isaret.set(id, oneri(u)); else isaret.delete(id);
+      $(`[data-adet="${id}"]`).value = k.checked ? isaret.get(id) : '';
+      guncelle();
+    }));
+    $('#sListe').querySelectorAll('[data-adet]').forEach(g => (g.oninput = () => {
+      const id = Number(g.dataset.adet);
+      const n = Number(g.value.replace(',', '.'));
+      if (n > 0) isaret.set(id, n); else isaret.delete(id);
+      $(`[data-u="${id}"]`).checked = n > 0;
+      guncelle();
+    }));
+    guncelle();
+  }
+
+  function guncelle() {
+    const t = tedarikci();
+    const secilenler = urunler.filter(u => isaret.has(u.id));
+    $('#sSayac').textContent = secilenler.length ? `(${secilenler.length} kalem seçili)` : '';
+    const metin = `Merhaba${t ? ' ' + t.ad : ''},\n${dukkan ? dukkan + ' için ' : ''}sipariş listemiz:\n\n` +
+      secilenler.map(u => `• ${u.ad}${u.kod ? ' (' + u.kod + ')' : ''}: ${sayi(isaret.get(u.id))} ${u.birim}`).join('\n') +
+      ($('#sNot').value.trim() ? `\n\nNot: ${$('#sNot').value.trim()}` : '') + '\n\nTeşekkürler.';
+    const g = $('#sGonder');
+    g.href = waAdresi(t && t.telefon, metin);
+    g.style.opacity = secilenler.length ? 1 : 0.5;
+    g.style.pointerEvents = secilenler.length ? '' : 'none';
+    $('#sUyari').textContent = t && !t.telefon ? 'Bu tedarikçinin telefonu kayıtlı değil, WhatsApp kişi seçtirecek. Cari kartından telefon ekleyebilirsiniz.' : '';
+  }
+
+  $('#sTedarikci').onchange = () => { varsayilanlar(); ciz(); };
+  let zaman;
+  $('#sAra').oninput = () => { clearTimeout(zaman); zaman = setTimeout(ciz, 150); };
+  $('#sNot').oninput = guncelle;
+  varsayilanlar();
+  ciz();
+}
+
 // ---------- Ayarlar ----------
 
 async function ayarlarSayfasi() {
@@ -584,8 +677,6 @@ async function ayarlarSayfasi() {
     <form class="kart" id="ayarForm">
       <h2>Genel</h2>
       <label>Dükkan adı<input name="dukkan_adi" value="${esc(a.dukkan_adi)}" placeholder="Örn: Yılmaz Oto Yedek Parça"></label>
-      <label>Kritik stok listesinin WhatsApp'tan gideceği numara (isteğe bağlı)
-        <input name="uyari_telefon" type="tel" value="${esc(localStorage.getItem('uyariTelefon') || '')}" placeholder="Örn: 0532 123 45 67 (boş bırakılırsa kişi seçilir)"></label>
       <button type="submit">Kaydet</button>
     </form>
 
@@ -621,7 +712,6 @@ async function ayarlarSayfasi() {
   $('#ayarForm').onsubmit = async e => {
     e.preventDefault();
     const f = e.target;
-    localStorage.setItem('uyariTelefon', f.uyari_telefon.value.trim());
     await api('/ayarlar', { method: 'PUT', body: { dukkan_adi: f.dukkan_adi.value } });
     $('#dukkanAdi').textContent = f.dukkan_adi.value || 'Dükkan Takip';
     bildir('Kaydedildi');
