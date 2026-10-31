@@ -217,12 +217,14 @@ const sayfalar = {
   sayim: sayimSayfasi,
   satis: satisSayfasi,
   teklif: teklifSayfasi,
+  alis: alisSayfasi,
 };
 
 async function yonlendir() {
   const [, ad = '', id] = location.hash.replace(/^#/, '').split('/');
-  const aktif = { '': 'ozet', cari: 'cariler', urun: 'stok', siparis: 'stok', sayim: 'stok', teklif: 'satis' }[ad] || ad;
+  const aktif = { '': 'ozet', cari: 'cariler', urun: 'stok', siparis: 'alis', sayim: 'stok', teklif: 'satis' }[ad] || ad;
   document.querySelectorAll('[data-sayfa]').forEach(a => a.classList.toggle('aktif', a.dataset.sayfa === aktif));
+  document.body.classList.remove('ana-sayfa');
   try {
     await (sayfalar[ad] || ozetSayfasi)(id);
     window.scrollTo(0, 0);
@@ -238,40 +240,46 @@ async function ozetSayfasi() {
   const o = await api('/ozet');
   $('#dukkanAdi').textContent = o.dukkan;
   document.title = o.dukkan;
+  document.body.classList.add('ana-sayfa');
+  const kare = (adres, ikon, ad, renk, rozet = '') =>
+    `<a class="kare" href="${adres}" style="--renk:${renk}">${rozet}<span class="kare-ikon">${ikon}</span><span>${ad}</span></a>`;
   icerik.innerHTML = `${kurulumKarti()}${yedekHatirlatma(o.son_yedek, o.sayilar.cari + o.sayilar.urun > 0)}
+    <div class="kareler">
+      ${kare('#/satis', '🧾', 'Satış', '#1a7f37')}
+      ${kare('#/teklif', '📄', 'Teklif', '#0e7490')}
+      ${kare('#/stok', '📦', 'Stok', '#1f4e79', o.kritik.length ? `<span class="kare-rozet">${o.kritik.length}</span>` : '')}
+      ${kare('#/cariler', '👥', 'Müşteri / Tedarikçi', '#6d28d9')}
+      ${kare('#/alis', '📥', 'Satın alma', '#c2410c')}
+      ${kare('#/sayim', '🔢', 'Stok sayımı', '#4d7c0f')}
+      <a class="kare" href="#" id="kareBarkod" style="--renk:#374151"><span class="kare-ikon">📷</span><span>Barkodla bul</span></a>
+      ${kare('#/ayarlar', '⚙️', 'Ayarlar', '#6b7280')}
+    </div>
     <div class="izgara">
-      <div class="kutu"><div class="etiket">Bize borçlu olanlar</div><div class="deger pozitif">${para(o.alacak)}</div></div>
-      <div class="kutu"><div class="etiket">Bizim borçlarımız</div><div class="deger negatif">${para(o.borc)}</div></div>
-      <div class="kutu"><div class="etiket">Kritik stoktaki ürün</div><div class="deger ${o.kritik.length ? 'negatif' : ''}">${o.kritik.length}</div></div>
-      <div class="kutu"><div class="etiket">Stok değeri (alış)</div><div class="deger">${para(o.sayilar.stok_degeri)}</div></div>
+      <div class="kutu tikla" data-git="#/cariler"><div class="etiket">Bize borçlu olanlar</div><div class="deger pozitif">${para(o.alacak)}</div></div>
+      <div class="kutu tikla" data-git="#/cariler"><div class="etiket">Bizim borçlarımız</div><div class="deger negatif">${para(o.borc)}</div></div>
     </div>
-    <div class="kart ${o.kritik.length ? 'uyari-kart' : ''}">
-      <div class="baslik-satir"><h2>Kritik stok</h2>${o.kritik.length ? '<a class="dugme yesil kucuk" href="#/siparis">🛒 Sipariş ver</a>' : ''}</div>
-      ${o.kritik.length ? `<ul class="liste">${o.kritik.map(u => `
-        <li class="tikla" data-git="#/urun/${u.id}"><div><b>${esc(u.ad)}</b> <span class="kucuk-yazi">${esc(u.kod)}</span><br>
-        <span class="kucuk-yazi">Kritik seviye: ${sayi(u.kritik)}</span></div>
-        <div class="negatif"><b>${sayi(u.stok)}</b> ${esc(u.birim)}</div></li>`).join('')}</ul>`
-        : '<div class="bos">Kritik seviyede ürün yok 👍</div>'}
-    </div>
-    <div class="iki-sutun">
-      <div class="kart"><h2>Son cari hareketleri</h2>
-        ${o.sonCari.length ? `<ul class="liste">${o.sonCari.map(h => `
-          <li class="tikla" data-git="#/cari/${h.cari_id}"><div><b>${esc(h.cari_ad)}</b><br><span class="kucuk-yazi">${tarihYaz(h.tarih)} · ${esc(h.aciklama)}</span></div>
-          <div class="${h.tip === 'borc' ? 'pozitif' : 'negatif'}">${h.tip === 'borc' ? '+' : '−'}${para(h.tutar)}</div></li>`).join('')}</ul>`
-          : '<div class="bos">Henüz hareket yok</div>'}
-      </div>
-      <div class="kart"><h2>Son stok hareketleri</h2>
-        ${o.sonStok.length ? `<ul class="liste">${o.sonStok.map(h => `
-          <li class="tikla" data-git="#/urun/${h.urun_id}"><div><b>${esc(h.urun_ad)}</b><br><span class="kucuk-yazi">${tarihYaz(h.tarih)} · ${hareketAdi(h)}</span></div>
-          <div>${miktarYaz(h)} ${esc(h.birim)}</div></li>`).join('')}</ul>`
-          : '<div class="bos">Henüz hareket yok</div>'}
-      </div>
-    </div>`;
+    ${o.kritik.length ? `<div class="kart uyari-kart">
+      <div class="baslik-satir"><h2>⚠️ Kritik stok (${o.kritik.length})</h2><a class="dugme yesil kucuk" href="#/siparis">🛒 Sipariş ver</a></div>
+      <ul class="liste">${o.kritik.slice(0, 5).map(u => `
+        <li class="tikla" data-git="#/urun/${u.id}"><div><b>${esc(u.ad)}</b><br><span class="kucuk-yazi">Kritik seviye: ${sayi(u.kritik)}</span></div>
+        <div class="negatif"><b>${sayi(u.stok)}</b> ${esc(u.birim)}</div></li>`).join('')}</ul>
+      ${o.kritik.length > 5 ? '<p class="kucuk-yazi"><a href="#/stok">Tümünü gör →</a></p>' : ''}
+    </div>` : ''}`;
+  if (o.kritik.length > 5) sessionStorage.setItem('sadeceKritik', '1');
   tiklamaBagla();
   kurulumKartiBagla();
   rozetGuncelle();
+  $('#kareBarkod').onclick = e => { e.preventDefault(); barkodlaBul(); };
   const hy = $('#hizliYedek');
   if (hy) hy.onclick = yedekAl;
+}
+
+async function barkodlaBul() {
+  const kod = await barkodOku();
+  if (!kod) return;
+  const { urun } = await api('/barkod/' + encodeURIComponent(kod));
+  if (urun) location.hash = '#/urun/' + urun.id;
+  else bilinmeyenBarkod(kod, id => (location.hash = '#/urun/' + id));
 }
 
 async function yedekAl() {
@@ -441,7 +449,7 @@ async function stokSayfasi() {
   const sadeceKritik = sessionStorage.getItem('sadeceKritik') === '1';
   icerik.innerHTML = `
     <div class="baslik-satir"><h1>Stok</h1><button id="yeniUrun">+ Yeni ürün</button></div>
-    <div class="arac"><button class="ikincil" id="barkodBul">📷 Barkodla bul</button><a class="dugme ikincil" href="#/sayim">🔢 Sayım yap</a><a class="dugme ikincil" href="#/siparis">🛒 Sipariş</a></div>
+    <div class="arac"><button class="ikincil" id="barkodBul">📷 Barkodla bul</button><a class="dugme ikincil" href="#/sayim">🔢 Sayım yap</a></div>
     <div class="arac">
       <input type="search" id="urunAra" placeholder="Ürün adı, kod, marka veya raf ara…">
       <label class="yatay" style="margin:0"><input type="checkbox" id="kritikFiltre" ${sadeceKritik ? 'checked' : ''}> Sadece kritik</label>
@@ -450,13 +458,7 @@ async function stokSayfasi() {
     <p class="kucuk-yazi"><a href="#" data-csv="urunler">Excel'e aktar (CSV)</a></p>`;
   csvBagla();
   $('#yeniUrun').onclick = () => urunFormu();
-  $('#barkodBul').onclick = async () => {
-    const kod = await barkodOku();
-    if (!kod) return;
-    const { urun } = await api('/barkod/' + encodeURIComponent(kod));
-    if (urun) location.hash = '#/urun/' + urun.id;
-    else bilinmeyenBarkod(kod, id => (location.hash = '#/urun/' + id));
-  };
+  $('#barkodBul').onclick = barkodlaBul;
   let zaman;
   $('#urunAra').oninput = () => { clearTimeout(zaman); zaman = setTimeout(yukle, 200); };
   $('#kritikFiltre').onchange = e => { sessionStorage.setItem('sadeceKritik', e.target.checked ? '1' : '0'); yukle(); };
@@ -892,8 +894,7 @@ async function siparisSayfasi(cariId) {
   const secili = Number(cariId) || tedarikciler[0].id;
   const oneri = u => Math.max(1, Math.ceil(u.kritik * 2 - u.stok));
   icerik.innerHTML = `
-    <p><a href="#/stok">← Stok</a></p>
-    <h1>Tedarikçiye sipariş</h1>
+    ${alisSekmeleri('siparis')}
     <div class="kart">
       <label>Tedarikçi<select id="sTedarikci">${tedarikciler.map(t =>
         `<option value="${t.id}" ${t.id === secili ? 'selected' : ''}>${esc(t.ad)}${t.telefon ? '' : ' (telefon yok)'}</option>`).join('')}</select></label>
@@ -1197,47 +1198,60 @@ function teklifiSatisaCevir(t) {
 
 function satisSayfasi() { return sepetSayfasi('satis'); }
 function teklifSayfasi() { return sepetSayfasi('teklif'); }
+function alisSayfasi() { return sepetSayfasi('alis'); }
+
+// Mal alımı ile tedarikçiye sipariş aynı yerde, iki sekme olarak durur.
+function alisSekmeleri(aktif) {
+  return `<div class="sekme">
+      <a href="#/alis" class="${aktif === 'alis' ? 'aktif' : ''}">📥 Mal alımı</a>
+      <a href="#/siparis" class="${aktif === 'siparis' ? 'aktif' : ''}">🛒 Sipariş</a>
+    </div>`;
+}
 
 async function sepetSayfasi(mod) {
   const satisModu = mod === 'satis';
+  const alisModu = mod === 'alis';
+  const odemeli = satisModu || alisModu;
   const [urunler, cariler, gecmis, ayar] = await Promise.all([
-    api('/urunler'), api('/cariler'), api(satisModu ? '/satislar' : '/teklifler'), api('/ayarlar'),
+    api('/urunler'), api('/cariler'), api({ satis: '/satislar', teklif: '/teklifler', alis: '/alislar' }[mod]), api('/ayarlar'),
   ]);
   pdfHazirla().catch(() => {});
   const urunHarita = new Map(urunler.map(u => [u.id, u]));
   const sepet = sepetOku(mod);
   sepet.kalemler = sepet.kalemler.filter(k => urunHarita.has(k.urun_id));
   const kaydet = () => sepetYaz(mod, sepet);
-  const musteriler = [...cariler.filter(c => c.tur === 'musteri'), ...cariler.filter(c => c.tur !== 'musteri')];
+  const anaTur = alisModu ? 'tedarikci' : 'musteri';
+  const musteriler = [...cariler.filter(c => c.tur === anaTur), ...cariler.filter(c => c.tur !== anaTur)];
+  const fiyatAl = u => (alisModu ? u.alis_fiyat : u.satis_fiyat) || 0;
 
   icerik.innerHTML = `
-    <div class="sekme">
+    ${alisModu ? alisSekmeleri('alis') : `<div class="sekme">
       <a href="#/satis" class="${satisModu ? 'aktif' : ''}">🧾 Satış</a>
       <a href="#/teklif" class="${satisModu ? '' : 'aktif'}">📄 Teklif</a>
-    </div>
+    </div>`}
     ${sepet.teklif_id ? `<div class="kart" style="border-left:4px solid var(--ana)">Teklif #${sepet.teklif_id} satışa çevriliyor.</div>` : ''}
     <div class="kart">
-      <label>Müşteri<select id="sMusteri"><option value="">${satisModu ? '— Perakende (müşterisiz) —' : '— Listede yok, adını yazacağım —'}</option>
-        ${musteriler.map(c => `<option value="${c.id}" ${String(c.id) === String(sepet.cari_id) ? 'selected' : ''}>${esc(c.ad)}${c.tur === 'tedarikci' ? ' (tedarikçi)' : ''}</option>`).join('')}</select></label>
-      ${satisModu ? '' : `<label id="sMusteriAdiKutu">Müşteri adı<input id="sMusteriAdi" value="${esc(sepet.musteri)}" placeholder="Örn: Ahmet Bey (Doblo)"></label>`}
+      <label>${alisModu ? 'Tedarikçi' : 'Müşteri'}<select id="sMusteri"><option value="">${{ satis: '— Perakende (müşterisiz) —', teklif: '— Listede yok, adını yazacağım —', alis: '— Tedarikçisiz (sadece stoğa ekle) —' }[mod]}</option>
+        ${musteriler.map(c => `<option value="${c.id}" ${String(c.id) === String(sepet.cari_id) ? 'selected' : ''}>${esc(c.ad)}${c.tur !== anaTur ? (c.tur === 'tedarikci' ? ' (tedarikçi)' : ' (müşteri)') : ''}</option>`).join('')}</select></label>
+      ${mod !== 'teklif' ? '' : `<label id="sMusteriAdiKutu">Müşteri adı<input id="sMusteriAdi" value="${esc(sepet.musteri)}" placeholder="Örn: Ahmet Bey (Doblo)"></label>`}
       <div class="arac" style="margin:0"><input type="search" id="sUrunAra" placeholder="Ürün ekle: ad, kod veya marka"><button class="ikincil" id="sBarkodOku">📷 Barkod</button></div>
       <ul class="liste" id="sOneriler"></ul>
     </div>
-    <div class="kart"><h2>${satisModu ? 'Sepet' : 'Teklif kalemleri'}</h2><ul class="liste" id="sSepet"></ul></div>
+    <div class="kart"><h2>${{ satis: 'Sepet', teklif: 'Teklif kalemleri', alis: 'Gelen mallar' }[mod]}</h2><ul class="liste" id="sSepet"></ul></div>
     <div class="kart siparis-alt">
       <div class="baslik-satir"><span>Toplam</span><b id="sToplam" style="font-size:24px"></b></div>
-      ${satisModu ? `<div class="sekme" style="margin:10px 0">
-          <a href="#" data-odeme="pesin">💵 Peşin</a><a href="#" data-odeme="veresiye">📝 Veresiye</a></div>`
+      ${odemeli ? `<div class="sekme" style="margin:10px 0">
+          <a href="#" data-odeme="pesin">💵 ${alisModu ? 'Parası ödendi' : 'Peşin'}</a><a href="#" data-odeme="veresiye">📝 ${alisModu ? 'Borçlandık (veresiye)' : 'Veresiye'}</a></div>`
         : `<div class="form-izgara"><label>Geçerlilik (gün)<input id="sGecerlilik" inputmode="numeric" value="${esc(sepet.gecerlilik || 7)}"></label>
            <label>Not<input id="sAciklama" value="${esc(sepet.aciklama || '')}" placeholder="Örn: Montaj dahil"></label></div>`}
-      <div class="arac" style="margin:0"><button class="yesil" id="sTamamla" style="flex:1;padding:14px">${satisModu ? '✓ Satışı tamamla' : '✓ Teklifi kaydet'}</button>
+      <div class="arac" style="margin:0"><button class="yesil" id="sTamamla" style="flex:1;padding:14px">${{ satis: '✓ Satışı tamamla', teklif: '✓ Teklifi kaydet', alis: '✓ Mal alımını kaydet' }[mod]}</button>
         <button class="metin" id="sTemizle">Temizle</button></div>
     </div>
-    <div class="kart"><h2>${satisModu ? 'Son satışlar' : 'Kayıtlı teklifler'}</h2>
-      ${gecmis.length ? `<ul class="liste">${gecmis.map(b => `<li class="tikla" data-belge="${b.id}">
+    <div class="kart"><h2>${{ satis: 'Son satışlar', teklif: 'Kayıtlı teklifler', alis: 'Son mal alımları' }[mod]}</h2>
+      ${gecmis.length ? `<ul class="liste">${gecmis.map(b => `<li ${alisModu ? '' : `class="tikla" data-belge="${b.id}"`}>
         <div><b>#${b.no} ${esc(b.musteri)}</b><br><span class="kucuk-yazi">${tarihYaz(b.tarih)} · ${b.kalemler.length} kalem
-        ${satisModu ? ' · ' + (b.odeme === 'veresiye' ? 'veresiye' : 'peşin') : b.satis_no ? ' · <span class="pozitif">satışa çevrildi</span>' : ''}</span></div>
-        <div><b>${para(b.toplam)}</b> 📄</div></li>`).join('')}</ul>` : '<div class="bos">Henüz kayıt yok</div>'}
+        ${odemeli ? ' · ' + (b.odeme === 'veresiye' ? (alisModu ? 'borçlandık' : 'veresiye') : (alisModu ? 'ödendi' : 'peşin')) : b.satis_no ? ' · <span class="pozitif">satışa çevrildi</span>' : ''}</span></div>
+        <div><b>${para(b.toplam)}</b>${alisModu ? '' : ' 📄'}</div></li>`).join('')}</ul>` : '<div class="bos">Henüz kayıt yok</div>'}
     </div>`;
 
   const musteriAdiKutu = $('#sMusteriAdiKutu');
@@ -1255,7 +1269,7 @@ async function sepetSayfasi(mod) {
   function ekle(u, n = 1) {
     const k = sepet.kalemler.find(x => x.urun_id === u.id);
     if (k) k.miktar = Math.round((Number(k.miktar) + n) * 1000) / 1000;
-    else sepet.kalemler.push({ urun_id: u.id, miktar: n, fiyat: u.satis_fiyat || 0 });
+    else sepet.kalemler.push({ urun_id: u.id, miktar: n, fiyat: fiyatAl(u) });
     kaydet();
   }
 
@@ -1269,11 +1283,11 @@ async function sepetSayfasi(mod) {
           <span class="kucuk-yazi ${yetmez ? 'negatif' : ''}">· stok ${sayi(u.stok)} ${esc(u.birim)}${yetmez ? ' (yetmiyor!)' : ''}</span></div>
         <div class="sepet-satir">
           <label>Adet<input inputmode="decimal" data-miktar="${u.id}" value="${k.miktar}"></label>
-          <label>Birim fiyat (₺)<input inputmode="decimal" data-fiyat="${u.id}" value="${k.fiyat}"></label>
+          <label>${alisModu ? 'Alış fiyatı (₺)' : 'Birim fiyat (₺)'}<input inputmode="decimal" data-fiyat="${u.id}" value="${k.fiyat}"></label>
           <div class="sag"><span class="kucuk-yazi">Tutar</span><br><b data-tutar="${u.id}">${para(k.miktar * k.fiyat)}</b></div>
           <button class="metin" data-sil="${u.id}">✕</button>
         </div></li>`;
-    }).join('') : '<div class="bos">Ürün eklemek için yukarıdan arayın ya da barkod okutun</div>';
+    }).join('') : `<div class="bos">${alisModu ? 'Gelen malları' : 'Ürün eklemek için'} yukarıdan arayın ya da barkod okutun</div>`;
     $('#sToplam').textContent = para(toplam);
     icerik.querySelectorAll('[data-odeme]').forEach(a => {
       a.classList.toggle('aktif', a.dataset.odeme === sepet.odeme);
@@ -1307,7 +1321,7 @@ async function sepetSayfasi(mod) {
     const ara = aramaMetni($('#sUrunAra').value);
     const bulunan = ara ? urunler.filter(u => aramaMetni([u.ad, u.kod, u.marka, u.barkod].join(' ')).includes(ara)).slice(0, 6) : [];
     $('#sOneriler').innerHTML = bulunan.map(u => `<li class="tikla" data-ekle="${u.id}"><div><b>${esc(u.ad)}</b><br>
-      <span class="kucuk-yazi">${esc(u.kod)} · stok ${sayi(u.stok)} ${esc(u.birim)}</span></div><div>${para(u.satis_fiyat)} <b>＋</b></div></li>`).join('');
+      <span class="kucuk-yazi">${esc(u.kod)} · stok ${sayi(u.stok)} ${esc(u.birim)}</span></div><div>${para(fiyatAl(u))} <b>＋</b></div></li>`).join('');
     $('#sOneriler').querySelectorAll('[data-ekle]').forEach(li => (li.onclick = () => {
       ekle(urunHarita.get(Number(li.dataset.ekle)));
       $('#sUrunAra').value = '';
@@ -1316,7 +1330,7 @@ async function sepetSayfasi(mod) {
     }));
   };
   $('#sBarkodOku').onclick = () => barkodTarayici({
-    baslik: satisModu ? 'Satılan ürünleri okutun' : 'Teklife eklenecek ürünleri okutun',
+    baslik: { satis: 'Satılan ürünleri okutun', teklif: 'Teklife eklenecek ürünleri okutun', alis: 'Gelen malları okutun' }[mod],
     onKod: (kod, son) => {
       const u = urunler.find(x => x.barkod === kod);
       if (!u) {
@@ -1327,7 +1341,7 @@ async function sepetSayfasi(mod) {
       ekle(u);
       const k = sepet.kalemler.find(x => x.urun_id === u.id);
       son.className = 'tarayici-son iyi';
-      son.textContent = `✓ ${u.ad}: ${sayi(k.miktar)} ${u.birim} · ${para(u.satis_fiyat)}`;
+      son.textContent = `✓ ${u.ad}: ${sayi(k.miktar)} ${u.birim} · ${para(k.fiyat)}`;
     },
     onKapat: ciz,
   });
@@ -1352,6 +1366,12 @@ async function sepetSayfasi(mod) {
         const belge = await api('/satislar/' + id);
         await pdfHazirla().catch(() => {});
         belgeKarti({ ...belge, tur: 'satis' }, ayar, `✓ Satış kaydedildi (fiş #${belge.no})`);
+      } else if (alisModu) {
+        if (sepet.odeme === 'veresiye' && !sepet.cari_id) return bildir('Borçlu alım için tedarikçi seçin', true);
+        const { id: no } = await api('/alis', { method: 'POST', body: { cari_id: sepet.cari_id, odeme: sepet.odeme, kalemler, aciklama: sepet.aciklama } });
+        localStorage.removeItem('sepet_alis');
+        bildir(`✓ Mal alımı #${no} kaydedildi, stoklar arttı`);
+        await yonlendir();
       } else {
         const { id } = await api('/teklifler', { method: 'POST', body: { cari_id: sepet.cari_id, musteri: sepet.musteri, kalemler, gecerlilik: sepet.gecerlilik, aciklama: sepet.aciklama } });
         localStorage.removeItem('sepet_teklif');

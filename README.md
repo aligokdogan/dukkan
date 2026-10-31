@@ -19,13 +19,15 @@ titreşir ve ekranda uyarı çıkar. Uyarıdaki **WhatsApp'tan gönder** düğme
 
 - **Satış** sekmesi: sepete ürün ekle (arama veya barkod), peşin ya da veresiye satış. Stoktan düşer, veresiyede müşterinin hesabına yazar.
 - **Teklif**: aynı sepet, stok değişmez. Kayıtlı teklif tek dokunuşla satışa çevrilir.
+- **Satın alma** (ana sayfa): *Mal alımı* sekmesinde gelen mallar sepete eklenir, stoğa girer ve alış fiyatı güncellenir;
+  parası ödenmediyse tedarikçinin hesabına yazılır. *Sipariş* sekmesinde tedarikçiye sipariş formu hazırlanır.
 - Satış fişi, fiyat teklifi ve tedarikçi sipariş formu **PDF** olarak paylaş menüsünden WhatsApp'a gönderilir
   (PDF telefonda oluşturulur: `lib/jspdf.min.js` MIT lisansı, Türkçe karakterler için küçültülmüş DejaVu Sans yazı tipi).
 
 ## Barkod
 
 Ürün kartına barkod veya QR kod okutulabilir. Stok sayfasında **Barkodla bul**, **Sayım yap** (okuttukça sayar, bitince
-stokları günceller, yarıda kalırsa kaldığı yerden devam eder) ve sipariş ekranında **📷 Barkod** ile ürün eklenir.
+stokları günceller, yarıda kalırsa kaldığı yerden devam eder) satış, teklif, mal alımı ve sipariş ekranlarında **📷 Barkod** ile ürün eklenir.
 Okuma iPhone'da uygulamayla gelen ZXing kütüphanesiyle (`lib/`, MIT lisansı), Android Chrome'da telefonun kendi okuyucusuyla yapılır.
 
 ## Yedek

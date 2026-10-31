@@ -9,8 +9,8 @@ let veri = null;
 function bosVeri() {
   return {
     surum: 1,
-    sayac: { cari: 0, cariHareket: 0, urun: 0, stokHareket: 0, bildirim: 0, satis: 0, teklif: 0 },
-    cariler: [], cariHareketler: [], urunler: [], stokHareketler: [], bildirimler: [], satislar: [], teklifler: [],
+    sayac: { cari: 0, cariHareket: 0, urun: 0, stokHareket: 0, bildirim: 0, satis: 0, teklif: 0, alis: 0 },
+    cariler: [], cariHareketler: [], urunler: [], stokHareketler: [], bildirimler: [], satislar: [], teklifler: [], alislar: [],
     ayarlar: { dukkan_adi: '' },
   };
 }
@@ -388,6 +388,33 @@ yol('POST', '/satis', (p, q, b) => {
   return { id: no };
 });
 
+// Mal alımı: her kalem için stok girişi; tedarikçi seçiliyse hesabına alacak (borcumuz), peşinse ardından ödeme
+yol('POST', '/alis', (p, q, b) => {
+  const kalemler = kalemleriHazirla(b.kalemler);
+  const cariId = b.cari_id ? Number(b.cari_id) : null;
+  const cari = cariId ? cariBul(cariId) : null;
+  const odeme = b.odeme === 'veresiye' ? 'veresiye' : 'pesin';
+  if (odeme === 'veresiye' && !cari) hataVer('Veresiye alım için tedarikçi seçin');
+  const tarih = yazi(b.tarih) || yerelBugun();
+  const no = yeniId('alis');
+  const aciklama = yazi(b.aciklama);
+  for (const k of kalemler) {
+    icCagir('POST', `/urunler/${k.urun_id}/hareket`, {
+      tip: 'giris', miktar: k.miktar, birim_fiyat: k.fiyat, cari_id: cariId, cariye_yaz: !!cari, tarih,
+      aciklama: `Mal alımı #${no}` + (aciklama ? ` - ${aciklama}` : ''),
+    });
+    if (k.fiyat > 0) urunBul(k.urun_id).alis_fiyat = k.fiyat;  // son alış fiyatı
+  }
+  const toplam = toplamAl(kalemler);
+  if (cari && odeme === 'pesin' && toplam > 0) {
+    veri.cariHareketler.push({ id: yeniId('cariHareket'), cari_id: cari.id, tarih, tip: 'borc', tutar: toplam, aciklama: `Mal alımı #${no} peşin ödendi` });
+  }
+  veri.alislar.push({ id: no, no, tarih, cari_id: cariId, musteri: cari ? cari.ad : 'Tedarikçisiz', odeme, kalemler, toplam, aciklama });
+  return { id: no };
+});
+
+yol('GET', '/alislar', () => veri.alislar.slice(-30).reverse());
+
 yol('GET', '/satislar', () => veri.satislar.slice(-30).reverse());
 yol('GET', '/satislar/:id', p => veri.satislar.find(x => x.id === Number(p.id)) || hataVer('Satış bulunamadı'));
 
@@ -423,7 +450,7 @@ yol('GET', '/bildirimler', () => veri.bildirimler.slice(0, 50));
 // ---------- Dışarıya açılan işlevler ----------
 
 const DEGISTIRENLER = new Set(['POST', 'PUT', 'DELETE']);
-const STOK_ETKILI = /^\/(urunler|stok-hareket|satis)/;
+const STOK_ETKILI = /^\/(urunler|stok-hareket|satis|alis)/;
 
 // Değişiklikten sonra yeni kritik ürün çıkarsa kritikUyari(urunler, metin) çağrılır.
 let kritikUyari = () => {};
