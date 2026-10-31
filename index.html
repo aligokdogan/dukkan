@@ -30,6 +30,12 @@
     <a href="#/stok" data-sayfa="stok"><span>📦</span>Stok</a>
     <a href="#/ayarlar" data-sayfa="ayarlar"><span>⚙️</span>Ayarlar</a>
   </nav>
+  <dialog id="tarayici" class="tarayici">
+    <div class="tarayici-ust"><b id="tarayiciBaslik">Barkodu okutun</b><button type="button" class="ikincil kucuk" id="tarayiciKapat">Kapat ✕</button></div>
+    <div class="tarayici-video"><video id="tarayiciVideo" playsinline muted autoplay></video><div class="tarayici-cizgi"></div></div>
+    <div id="tarayiciSon" class="tarayici-son"></div>
+    <form id="tarayiciElle" class="arac" style="margin:8px 0 0"><input id="tarayiciKod" inputmode="numeric" placeholder="Okumuyorsa barkodu yazın"><button type="submit">Tamam</button></form>
+  </dialog>
   <dialog id="pencere"><form method="dialog" id="pencereForm"></form></dialog>
   <div id="bildirim"></div>
   <script src="veri.js"></script>

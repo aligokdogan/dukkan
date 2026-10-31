@@ -15,6 +15,12 @@ Her ürüne kritik seviye girilir. Satış veya sayım sonrası stok bu seviyeye
 titreşir ve ekranda uyarı çıkar. Uyarıdaki **WhatsApp'tan gönder** düğmesi kritik listesini istenen kişiye
 (ör. tedarikçiye) hazır mesaj olarak açar.
 
+## Barkod
+
+Ürün kartına barkod okutulabilir. Stok sayfasında **Barkodla bul**, **Sayım yap** (okuttukça sayar, bitince
+stokları günceller, yarıda kalırsa kaldığı yerden devam eder) ve sipariş ekranında **📷 Barkod** ile ürün eklenir.
+Okuma iPhone'da uygulamayla gelen ZXing kütüphanesiyle (`lib/`, MIT lisansı), Android Chrome'da telefonun kendi okuyucusuyla yapılır.
+
 ## Yedek
 
 Veriler yalnızca bu telefonda durur. **Ayarlar → Yedek al / gönder** ile haftada bir yedek alıp WhatsApp,

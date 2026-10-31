@@ -1,8 +1,8 @@
 // Uygulama dosyalarını telefonda saklar: internet olmadan da açılır.
 // Yeni sürüm yayınlanınca SURUM değiştirilir.
-const SURUM = 'dukkan-v5';
+const SURUM = 'dukkan-v6';
 const DOSYALAR = ['./', 'index.html', 'app.js', 'veri.js', 'style.css', 'manifest.json',
-  'ikon/ikon-192.png', 'ikon/ikon-512.png', 'ikon/apple-touch-icon.png', 'ikon/ikon.svg'];
+  'lib/zxing.min.js', 'ikon/ikon-192.png', 'ikon/ikon-512.png', 'ikon/apple-touch-icon.png', 'ikon/ikon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SURUM)

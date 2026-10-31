@@ -77,6 +77,10 @@ function formAc({ baslik, alanlar, kaydet, onayMetni = 'Kaydet', ek = '' }) {
       bildir(err.message, true);
     }
   };
+  f.querySelectorAll('[data-barkod-oku]').forEach(b => (b.onclick = async () => {
+    const kod = await barkodOku();
+    if (kod) f.elements[b.dataset.barkodOku].value = kod;
+  }));
   p.showModal();
   const ilk = f.querySelector('input:not([type=checkbox]), select, textarea');
   if (ilk && window.matchMedia('(min-width: 721px)').matches) ilk.focus();
@@ -92,6 +96,10 @@ function alanHtml(a) {
   }
   if (a.tip === 'metin-alani') return `<label${sinif}>${esc(a.etiket)}<textarea ${ortak}>${esc(a.deger)}</textarea></label>`;
   if (a.tip === 'onay') return `<label class="yatay tam"><input type="checkbox" ${ortak} ${a.deger ? 'checked' : ''}>${esc(a.etiket)}</label>`;
+  if (a.tip === 'barkod') {
+    return `<label${sinif}>${esc(a.etiket)}<div class="barkod-satir"><input type="text" inputmode="numeric" ${ortak} value="${esc(a.deger)}" placeholder="Okutun veya yazın">
+      <button type="button" class="ikincil" data-barkod-oku="${a.ad}">📷</button></div></label>`;
+  }
   const tip = a.tip === 'sayi' ? 'text" inputmode="decimal' : a.tip || 'text';
   return `<label${sinif}>${esc(a.etiket)}<input type="${tip}" ${ortak} value="${esc(a.deger)}" ${a.ipucu ? `placeholder="${esc(a.ipucu)}"` : ''}></label>`;
 }
@@ -205,11 +213,12 @@ const sayfalar = {
   urun: urunSayfasi,
   ayarlar: ayarlarSayfasi,
   siparis: siparisSayfasi,
+  sayim: sayimSayfasi,
 };
 
 async function yonlendir() {
   const [, ad = '', id] = location.hash.replace(/^#/, '').split('/');
-  const aktif = { '': 'ozet', cari: 'cariler', urun: 'stok', siparis: 'stok' }[ad] || ad;
+  const aktif = { '': 'ozet', cari: 'cariler', urun: 'stok', siparis: 'stok', sayim: 'stok' }[ad] || ad;
   document.querySelectorAll('[data-sayfa]').forEach(a => a.classList.toggle('aktif', a.dataset.sayfa === aktif));
   try {
     await (sayfalar[ad] || ozetSayfasi)(id);
@@ -428,7 +437,8 @@ async function cariSayfasi(id) {
 async function stokSayfasi() {
   const sadeceKritik = sessionStorage.getItem('sadeceKritik') === '1';
   icerik.innerHTML = `
-    <div class="baslik-satir"><h1>Stok</h1><div class="arac" style="margin:0"><a class="dugme ikincil" href="#/siparis">🛒 Sipariş</a><button id="yeniUrun">+ Yeni ürün</button></div></div>
+    <div class="baslik-satir"><h1>Stok</h1><button id="yeniUrun">+ Yeni ürün</button></div>
+    <div class="arac"><button class="ikincil" id="barkodBul">📷 Barkodla bul</button><a class="dugme ikincil" href="#/sayim">🔢 Sayım yap</a><a class="dugme ikincil" href="#/siparis">🛒 Sipariş</a></div>
     <div class="arac">
       <input type="search" id="urunAra" placeholder="Ürün adı, kod, marka veya raf ara…">
       <label class="yatay" style="margin:0"><input type="checkbox" id="kritikFiltre" ${sadeceKritik ? 'checked' : ''}> Sadece kritik</label>
@@ -437,6 +447,13 @@ async function stokSayfasi() {
     <p class="kucuk-yazi"><a href="#" data-csv="urunler">Excel'e aktar (CSV)</a></p>`;
   csvBagla();
   $('#yeniUrun').onclick = () => urunFormu();
+  $('#barkodBul').onclick = async () => {
+    const kod = await barkodOku();
+    if (!kod) return;
+    const { urun } = await api('/barkod/' + encodeURIComponent(kod));
+    if (urun) location.hash = '#/urun/' + urun.id;
+    else bilinmeyenBarkod(kod, id => (location.hash = '#/urun/' + id));
+  };
   let zaman;
   $('#urunAra').oninput = () => { clearTimeout(zaman); zaman = setTimeout(yukle, 200); };
   $('#kritikFiltre').onchange = e => { sessionStorage.setItem('sadeceKritik', e.target.checked ? '1' : '0'); yukle(); };
@@ -457,13 +474,14 @@ async function stokSayfasi() {
   await yukle();
 }
 
-function urunFormu(u) {
+function urunFormu(u, { barkod = '', sonra } = {}) {
   const yeni = !u;
-  u = u || { birim: 'Adet' };
+  u = u || { birim: 'Adet', barkod };
   formAc({
     baslik: yeni ? 'Yeni ürün' : 'Ürünü düzenle',
     alanlar: [
       { ad: 'ad', etiket: 'Ürün adı', deger: u.ad, gerekli: true, tam: true },
+      { ad: 'barkod', etiket: 'Barkod', tip: 'barkod', deger: u.barkod, tam: true },
       { ad: 'kod', etiket: 'Ürün / OEM kodu', deger: u.kod },
       { ad: 'marka', etiket: 'Marka', deger: u.marka },
       { ad: 'raf', etiket: 'Raf / Yer', deger: u.raf },
@@ -477,7 +495,7 @@ function urunFormu(u) {
       if (yeni) {
         const r = await api('/urunler', { method: 'POST', body: v });
         bildir('Ürün eklendi');
-        location.hash = '#/urun/' + r.id;
+        if (sonra) sonra(r.id); else location.hash = '#/urun/' + r.id;
       } else {
         await api('/urunler/' + u.id, { method: 'PUT', body: v });
         bildir('Kaydedildi');
@@ -502,7 +520,7 @@ async function urunSayfasi(id) {
     <p><a href="#/stok">← Stok</a></p>
     <div class="kart ${kritik ? 'uyari-kart' : ''}">
       <div class="baslik-satir"><h1 style="margin:0">${esc(u.ad)} ${stokRozet(u)}</h1><button class="ikincil kucuk" id="duzenle">Düzenle</button></div>
-      <p class="kucuk-yazi">${[u.kod && 'Kod: ' + esc(u.kod), u.marka && esc(u.marka), u.raf && 'Raf: ' + esc(u.raf)].filter(Boolean).join(' · ')}</p>
+      <p class="kucuk-yazi">${[u.kod && 'Kod: ' + esc(u.kod), u.barkod && 'Barkod: ' + esc(u.barkod), u.marka && esc(u.marka), u.raf && 'Raf: ' + esc(u.raf)].filter(Boolean).join(' · ')}</p>
       <div class="izgara">
         <div class="kutu"><div class="etiket">Stok</div><div class="deger ${kritik ? 'negatif' : ''}">${sayi(u.stok)} ${esc(u.birim)}</div></div>
         <div class="kutu"><div class="etiket">Kritik seviye</div><div class="deger">${u.kritik ? sayi(u.kritik) : '—'}</div></div>
@@ -563,6 +581,301 @@ async function urunSayfasi(id) {
   };
 }
 
+// ---------- Barkod okuyucu ----------
+
+let zxingYukleniyor = null;
+function zxingYukle() {
+  if (window.ZXing) return Promise.resolve();
+  zxingYukleniyor = zxingYukleniyor || new Promise((coz, reddet) => {
+    const sc = document.createElement('script');
+    sc.src = 'lib/zxing.min.js';
+    sc.onload = coz;
+    sc.onerror = () => { zxingYukleniyor = null; reddet(new Error('Barkod okuyucu yüklenemedi')); };
+    document.head.appendChild(sc);
+  });
+  return zxingYukleniyor;
+}
+
+function bip() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    o.frequency.value = 1800;
+    o.connect(ctx.destination);
+    o.start();
+    o.stop(ctx.currentTime + 0.08);
+    o.onended = () => ctx.close();
+  } catch { /* ses çalınamazsa önemli değil */ }
+  if (navigator.vibrate) navigator.vibrate(60);
+}
+
+// Kamerayı açar. Her okunan barkod için onKod(kod) çağrılır; onKod false dönerse tarayıcı kapanır.
+// Döndürülen kapat() ile dışarıdan kapatılabilir.
+async function barkodTarayici({ baslik = 'Barkodu okutun', onKod, onKapat }) {
+  const d = $('#tarayici');
+  const video = $('#tarayiciVideo');
+  $('#tarayiciBaslik').textContent = baslik;
+  const son = $('#tarayiciSon');
+  son.textContent = 'Kamera açılıyor…';
+  son.className = 'tarayici-son';
+  let durdur = () => {};
+  let kapandi = false;
+  let sonKod = '', sonZaman = 0;
+
+  const kapat = () => {
+    if (kapandi) return;
+    kapandi = true;
+    durdur();
+    if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+    if (d.open) d.close();
+    if (onKapat) onKapat();
+  };
+  const yakala = async kod => {
+    kod = String(kod).trim();
+    if (!kod || kapandi) return;
+    // Aynı barkod kamerada dururken art arda sayılmasın: tekrar sayılması için
+    // barkodun en az 2 saniye görüntüden çıkması gerekir
+    const simdi = Date.now();
+    const ayni = kod === sonKod && simdi - sonZaman < 2000;
+    sonKod = kod;
+    sonZaman = simdi;
+    if (ayni) return;
+    bip();
+    if ((await onKod(kod, son)) === false) kapat();
+  };
+
+  $('#tarayiciKapat').onclick = kapat;
+  d.oncancel = e => { e.preventDefault(); kapat(); };
+  $('#tarayiciElle').onsubmit = e => {
+    e.preventDefault();
+    const g = $('#tarayiciKod');
+    const kod = g.value;
+    g.value = '';
+    sonKod = '';
+    yakala(kod);
+  };
+  d.showModal();
+
+  const kamera = { video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Bu cihazda kamera kullanılamıyor');
+    if ('BarcodeDetector' in window) {
+      // Android Chrome'un kendi okuyucusu: hızlı ve ek dosya gerektirmez
+      const akis = await navigator.mediaDevices.getUserMedia(kamera);
+      if (kapandi) { akis.getTracks().forEach(t => t.stop()); return kapat; }
+      video.srcObject = akis;
+      await video.play().catch(() => {});
+      son.textContent = '';
+      const dedektor = new BarcodeDetector();
+      let calis = true;
+      durdur = () => (calis = false);
+      const dongu = async () => {
+        if (!calis) return;
+        try {
+          const bulunan = await dedektor.detect(video);
+          if (bulunan.length) await yakala(bulunan[0].rawValue);
+        } catch { /* kare hazır değil */ }
+        if (calis) setTimeout(dongu, 120);
+      };
+      dongu();
+    } else {
+      // iPhone ve diğerleri: ZXing kütüphanesi (uygulamayla birlikte gelir, internetsiz çalışır)
+      await zxingYukle();
+      if (kapandi) return kapat;
+      const ipucu = new Map();
+      const B = ZXing.BarcodeFormat;
+      // TRY_HARDER kullanılmıyor: canlı görüntüde okumayı engelliyor
+      ipucu.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [B.EAN_13, B.EAN_8, B.UPC_A, B.UPC_E, B.CODE_128, B.CODE_39, B.ITF]);
+      const okuyucu = new ZXing.BrowserMultiFormatReader(ipucu, 150);
+      durdur = () => okuyucu.reset();
+      await okuyucu.decodeFromConstraints(kamera, video, sonuc => { if (sonuc) yakala(sonuc.getText()); });
+      if (kapandi) okuyucu.reset();
+      else son.textContent = '';
+    }
+  } catch (e) {
+    son.className = 'tarayici-son kotu';
+    son.textContent = e.name === 'NotAllowedError'
+      ? 'Kamera izni verilmedi. Telefon Ayarları → Safari (veya uygulama) → Kamera iznini açın. Barkodu aşağıya da yazabilirsiniz.'
+      : (e.message || 'Kamera açılamadı') + '. Barkodu aşağıya yazabilirsiniz.';
+  }
+  return kapat;
+}
+
+// Tek barkod okuyup döner (iptal edilirse null)
+function barkodOku(baslik) {
+  return new Promise(coz => {
+    let sonuc = null;
+    barkodTarayici({ baslik, onKod: kod => { sonuc = kod; return false; }, onKapat: () => coz(sonuc) });
+  });
+}
+
+// Kayıtlı olmayan barkod: yeni ürün aç ya da mevcut ürüne bağla
+async function bilinmeyenBarkod(kod, sonra) {
+  const urunler = await api('/urunler');
+  const p = $('#pencere');
+  const f = $('#pencereForm');
+  f.innerHTML = `<h2>Bu barkod kayıtlı değil</h2>
+    <p><b>${esc(kod)}</b></p>
+    <div class="arac" style="flex-direction:column;align-items:stretch">
+      <button type="button" id="bbYeni">+ Yeni ürün olarak ekle</button>
+      <label style="margin:8px 0 0">veya mevcut bir ürüne bağla
+        <select id="bbSec"><option value="">— Ürün seçin —</option>${urunler.filter(u => !u.barkod).map(u =>
+          `<option value="${u.id}">${esc(u.ad)}${u.kod ? ' (' + esc(u.kod) + ')' : ''}</option>`).join('')}</select></label>
+      <button type="button" class="ikincil" id="bbBagla">Seçili ürüne bağla</button>
+    </div>
+    <div class="dugmeler"><button type="button" class="ikincil" data-iptal>Vazgeç</button></div>`;
+  f.onsubmit = e => e.preventDefault();
+  f.querySelector('[data-iptal]').onclick = () => p.close();
+  $('#bbYeni').onclick = () => { p.close(); urunFormu(null, { barkod: kod, sonra }); };
+  $('#bbBagla').onclick = async () => {
+    const id = $('#bbSec').value;
+    if (!id) return bildir('Önce bir ürün seçin', true);
+    try {
+      await api(`/urunler/${id}/barkod`, { method: 'PUT', body: { barkod: kod } });
+      p.close();
+      bildir('Barkod ürüne bağlandı');
+      sonra(Number(id));
+    } catch (err) { bildir(err.message, true); }
+  };
+  p.showModal();
+}
+
+// ---------- Barkodlu sayım ----------
+// Sayım yarıda kalsa da kaybolmasın diye telefonda saklanır.
+
+const sayimOku = () => JSON.parse(localStorage.getItem('sayim') || 'null');
+const sayimYaz = v => (v ? localStorage.setItem('sayim', JSON.stringify(v)) : localStorage.removeItem('sayim'));
+
+async function sayimSayfasi() {
+  const urunler = await api('/urunler');
+  const urunHarita = new Map(urunler.map(u => [u.id, u]));
+  let oturum = sayimOku();
+
+  if (!oturum) {
+    icerik.innerHTML = `
+      <p><a href="#/stok">← Stok</a></p>
+      <h1>Stok sayımı</h1>
+      <div class="kart">
+        <p>Raftaki ürünlerin barkodunu tek tek okutun. Her okutuşta o ürün 1 artar; adetleri sonra elle de düzeltebilirsiniz.
+        Bitirince sayılan ürünlerin stoğu sayılan miktara güncellenir. Sayılmayan ürünlere dokunulmaz.</p>
+        <p class="kucuk-yazi">Sayımı yarıda bırakabilirsiniz, kaldığınız yerden devam edersiniz.</p>
+        <button id="sayimBasla" style="width:100%">🔢 Sayıma başla</button>
+      </div>`;
+    $('#sayimBasla').onclick = () => {
+      sayimYaz({ baslangic: new Date().toLocaleString('tr-TR'), sayilar: {} });
+      yonlendir();
+    };
+    return;
+  }
+
+  const sayilanlar = () => Object.entries(oturum.sayilar).map(([id, n]) => ({ u: urunHarita.get(Number(id)), n })).filter(x => x.u);
+  const kaydet = () => sayimYaz(oturum);
+  const ekle = (id, n = 1) => {
+    oturum.sayilar[id] = Math.round(((oturum.sayilar[id] || 0) + n) * 1000) / 1000;
+    kaydet();
+  };
+
+  function ciz() {
+    const liste = sayilanlar();
+    const farkli = liste.filter(x => x.n !== x.u.stok).length;
+    icerik.innerHTML = `
+      <p><a href="#/stok">← Stok</a></p>
+      <div class="baslik-satir"><h1>Stok sayımı</h1><span class="kucuk-yazi">Başlangıç: ${esc(oturum.baslangic)}</span></div>
+      <div class="kart">
+        <button class="yesil" id="okutmaya" style="width:100%;font-size:18px;padding:14px">📷 Barkod okut</button>
+        <div class="arac" style="margin:10px 0 0">
+          <input type="search" id="sayimAra" placeholder="Barkodsuz ürün ekle: ad veya kod yazın" list="sayimUrunler">
+          <datalist id="sayimUrunler">${urunler.map(u => `<option value="${esc(u.ad)}">`).join('')}</datalist>
+          <button class="ikincil" id="sayimEkle">Ekle</button>
+        </div>
+      </div>
+      <div class="kart"><h2>Sayılanlar <span class="kucuk-yazi">(${liste.length} ürün, ${farkli} farklı)</span></h2>
+        ${liste.length ? `<ul class="liste">${liste.map(({ u, n }) => {
+          const fark = Math.round((n - u.stok) * 1000) / 1000;
+          return `<li><div style="flex:1"><b>${esc(u.ad)}</b><br><span class="kucuk-yazi">Sistemde: ${sayi(u.stok)} ${esc(u.birim)}
+            ${fark ? `· <span class="${fark > 0 ? 'pozitif' : 'negatif'}">fark ${fark > 0 ? '+' : '−'}${sayi(Math.abs(fark))}</span>` : '· <span class="pozitif">tutuyor ✓</span>'}</span></div>
+            <input class="sayim-adet" inputmode="decimal" data-adet="${u.id}" value="${n}">
+            <button class="metin" data-cikar="${u.id}" title="Listeden çıkar">✕</button></li>`;
+        }).join('')}</ul>` : '<div class="bos">Henüz ürün okutulmadı</div>'}
+      </div>
+      <div class="arac">
+        <button id="sayimBitir" ${liste.length ? '' : 'disabled style="opacity:.5"'}>✓ Sayımı bitir, stokları güncelle</button>
+        <button class="metin" id="sayimIptal">Sayımı iptal et</button>
+      </div>`;
+
+    $('#okutmaya').onclick = surekliOkut;
+    $('#sayimEkle').onclick = () => {
+      const ara = aramaMetni($('#sayimAra').value);
+      if (!ara) return;
+      const u = urunler.find(x => aramaMetni(x.ad) === ara) || urunler.find(x => aramaMetni(x.ad + ' ' + x.kod).includes(ara));
+      if (!u) return bildir('Ürün bulunamadı', true);
+      ekle(u.id);
+      ciz();
+    };
+    icerik.querySelectorAll('[data-adet]').forEach(g => (g.onchange = () => {
+      const n = Number(g.value.replace(',', '.'));
+      if (!Number.isFinite(n) || n < 0) return bildir('Geçersiz adet', true);
+      oturum.sayilar[g.dataset.adet] = n;
+      kaydet();
+      ciz();
+    }));
+    icerik.querySelectorAll('[data-cikar]').forEach(b => (b.onclick = () => {
+      delete oturum.sayilar[b.dataset.cikar];
+      kaydet();
+      ciz();
+    }));
+    $('#sayimIptal').onclick = () => {
+      if (!onayla('Sayım iptal edilsin mi? Okutulanlar silinir, stoklar değişmez.')) return;
+      sayimYaz(null);
+      location.hash = '#/stok';
+    };
+    $('#sayimBitir').onclick = async () => {
+      const degisen = sayilanlar().filter(x => x.n !== x.u.stok);
+      if (!onayla(`${sayilanlar().length} ürün sayıldı, ${degisen.length} üründe stok değişecek. Onaylıyor musunuz?`)) return;
+      for (const { u, n } of degisen) {
+        await api(`/urunler/${u.id}/hareket`, { method: 'POST', body: { tip: 'sayim', miktar: n, aciklama: 'Barkodlu sayım' } });
+      }
+      sayimYaz(null);
+      bildir(`Sayım kaydedildi, ${degisen.length} ürünün stoğu güncellendi`);
+      location.hash = '#/stok';
+    };
+  }
+
+  async function surekliOkut() {
+    let bekleyen = null;
+    await barkodTarayici({
+      baslik: 'Sayım: ürünleri okutun',
+      onKod: async (kod, son) => {
+        const u = urunler.find(x => x.barkod === kod);
+        if (!u) {
+          bekleyen = kod;
+          return false;
+        }
+        ekle(u.id);
+        son.className = 'tarayici-son iyi';
+        son.textContent = `✓ ${u.ad}: ${sayi(oturum.sayilar[u.id])} ${u.birim}`;
+      },
+      onKapat: async () => {
+        ciz();
+        if (bekleyen) {
+          bildir('Bu barkod kayıtlı değil', true);
+          bilinmeyenBarkod(bekleyen, async id => {
+            const { urun } = await api('/urunler/' + id);
+            const mevcut = urunler.find(x => x.id === id);
+            if (mevcut) Object.assign(mevcut, urun); else urunler.push(urun);
+            urunHarita.set(id, mevcut || urun);
+            ekle(id);
+            ciz();
+          });
+        }
+      },
+    });
+  }
+
+  ciz();
+}
+
 // ---------- Tedarikçiye sipariş ----------
 
 async function siparisSayfasi(cariId) {
@@ -579,7 +892,7 @@ async function siparisSayfasi(cariId) {
     <div class="kart">
       <label>Tedarikçi<select id="sTedarikci">${tedarikciler.map(t =>
         `<option value="${t.id}" ${t.id === secili ? 'selected' : ''}>${esc(t.ad)}${t.telefon ? '' : ' (telefon yok)'}</option>`).join('')}</select></label>
-      <input type="search" id="sAra" placeholder="Ürün ara…">
+      <div class="arac" style="margin:0"><input type="search" id="sAra" placeholder="Ürün ara…"><button class="ikincil" id="sBarkod">📷 Barkod</button></div>
     </div>
     <div class="kart"><h2>Ürünler <span class="kucuk-yazi" id="sSayac"></span></h2>
       <p class="kucuk-yazi">Kritik seviyedekiler işaretli gelir. Adetleri değiştirebilirsiniz.</p>
@@ -650,6 +963,22 @@ async function siparisSayfasi(cariId) {
   let zaman;
   $('#sAra').oninput = () => { clearTimeout(zaman); zaman = setTimeout(ciz, 150); };
   $('#sNot').oninput = guncelle;
+  // Barkod okutarak listeye ekle: her okutuşta ürün işaretlenir, tekrar okutulursa adet 1 artar
+  $('#sBarkod').onclick = () => barkodTarayici({
+    baslik: 'Siparişe eklenecek ürünleri okutun',
+    onKod: (kod, son) => {
+      const u = urunler.find(x => x.barkod === kod);
+      if (!u) {
+        son.className = 'tarayici-son kotu';
+        son.textContent = `Kayıtlı değil: ${kod}`;
+        return;
+      }
+      isaret.set(u.id, isaret.has(u.id) ? isaret.get(u.id) + 1 : oneri(u));
+      son.className = 'tarayici-son iyi';
+      son.textContent = `✓ ${u.ad}: ${sayi(isaret.get(u.id))} ${u.birim}`;
+    },
+    onKapat: ciz,
+  });
   varsayilanlar();
   ciz();
 }

@@ -104,7 +104,7 @@ function urunVerisi(b) {
   const ad = yazi(b.ad);
   if (!ad) hataVer('Ürün adı boş olamaz');
   return {
-    kod: yazi(b.kod), ad, marka: yazi(b.marka), raf: yazi(b.raf), birim: yazi(b.birim) || 'Adet',
+    barkod: yazi(b.barkod), kod: yazi(b.kod), ad, marka: yazi(b.marka), raf: yazi(b.raf), birim: yazi(b.birim) || 'Adet',
     kritik: sayiAl(b.kritik), alis_fiyat: sayiAl(b.alis_fiyat), satis_fiyat: sayiAl(b.satis_fiyat),
   };
 }
@@ -238,11 +238,30 @@ yol('GET', '/urunler', (p, q) => {
   const ara = aramaMetni(q.get('q'));
   const sadeceKritik = q.get('kritik') === '1';
   return veri.urunler
-    .filter(u => (!sadeceKritik || kritikMi(u)) && [u.ad, u.kod, u.marka, u.raf].some(a => aramaMetni(a).includes(ara)))
+    .filter(u => (!sadeceKritik || kritikMi(u)) && [u.ad, u.kod, u.marka, u.raf, u.barkod].some(a => aramaMetni(a).includes(ara)))
     .sort(adSirala);
 });
 
+function barkodKontrol(barkod, haricId) {
+  if (!barkod) return;
+  const diger = veri.urunler.find(u => u.barkod === barkod && u.id !== haricId);
+  if (diger) hataVer(`Bu barkod zaten "${diger.ad}" ürününde kayıtlı`);
+}
+
+yol('GET', '/barkod/:kod', p => {
+  const u = veri.urunler.find(x => x.barkod && x.barkod === p.kod);
+  return { urun: u || null };
+});
+
+yol('PUT', '/urunler/:id/barkod', (p, q, b) => {
+  const u = urunBul(p.id);
+  barkodKontrol(yazi(b.barkod), u.id);
+  u.barkod = yazi(b.barkod);
+  return { tamam: true };
+});
+
 yol('POST', '/urunler', (p, q, b) => {
+  barkodKontrol(yazi(b.barkod));
   const u = { id: yeniId('urun'), ...urunVerisi(b), stok: sayiAl(b.stok), uyari_gonderildi: 0, olusturma: simdi() };
   veri.urunler.push(u);
   if (u.stok) {
@@ -261,6 +280,7 @@ yol('GET', '/urunler/:id', p => {
 });
 
 yol('PUT', '/urunler/:id', (p, q, b) => {
+  barkodKontrol(yazi(b.barkod), Number(p.id));
   Object.assign(urunBul(p.id), urunVerisi(b));
   return { tamam: true };
 });
@@ -382,6 +402,12 @@ function gunOnce(n) {
   return d.toLocaleDateString('sv-SE');
 }
 
+// 12 haneye kontrol hanesini ekler (gerçek EAN-13 gibi okunsun diye)
+function ean13(on2) {
+  const t = [...on2].reduce((s, d, i) => s + Number(d) * (i % 2 ? 3 : 1), 0);
+  return on2 + ((10 - (t % 10)) % 10);
+}
+
 function ornekVeriOlustur() {
   const dukkan = veri.ayarlar.dukkan_adi;
   veri = bosVeri();
@@ -398,8 +424,9 @@ function ornekVeriOlustur() {
   const filtre = cari('Ege Filtre Dağıtım', 'tedarikci', '0232 700 20 20', 'İzmir', -6400);
   const yag = cari('Marmara Madeni Yağ', 'tedarikci', '0262 800 30 30', 'Kocaeli', 0);
 
+  let barkodSira = 0;
   const urun = (ad, kod, marka, raf, birim, stok, kritik, alis, satis) =>
-    icCagir('POST', '/urunler', { ad, kod, marka, raf, birim, stok, kritik, alis_fiyat: alis, satis_fiyat: satis }).id;
+    icCagir('POST', '/urunler', { ad, kod, marka, raf, birim, stok, kritik, alis_fiyat: alis, satis_fiyat: satis, barkod: ean13('869000000' + String(++barkodSira).padStart(3, '0')) }).id;
   const balataOn = urun('Fren Balatası Ön (Egea)', 'BP-4521', 'Bosch', 'A-1', 'Takım', 12, 4, 850, 1250);
   const balataArka = urun('Fren Balatası Arka (Egea)', 'BP-4522', 'Bosch', 'A-1', 'Takım', 6, 3, 720, 1050);
   const disk = urun('Fren Diski Ön (Clio 4)', 'BD-2210', 'Brembo', 'A-2', 'Adet', 2, 4, 1100, 1650);

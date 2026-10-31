@@ -123,3 +123,15 @@ dialog .dugmeler { display: flex; gap: 8px; justify-content: flex-end; margin-to
 .siparis-alt { position: sticky; bottom: calc(66px + env(safe-area-inset-bottom)); box-shadow: 0 -4px 12px rgba(0,0,0,.08); }
 .siparis-alt label { margin-bottom: 8px; }
 @media (min-width: 721px) { .siparis-alt { bottom: 0; } }
+
+.tarayici { padding: 14px; width: min(520px, 96vw); }
+.tarayici-ust { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.tarayici-video { position: relative; background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 4 / 3; }
+.tarayici-video video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tarayici-cizgi { position: absolute; left: 10%; right: 10%; top: 50%; height: 2px; background: #ff3b30; box-shadow: 0 0 8px #ff3b30; }
+.tarayici-son { min-height: 24px; margin-top: 8px; font-weight: 600; text-align: center; }
+.tarayici-son.iyi { color: var(--yesil); }
+.tarayici-son.kotu { color: var(--kirmizi); }
+.barkod-satir { display: flex; gap: 6px; margin-top: 4px; }
+.barkod-satir input { margin: 0; }
+.sayim-adet { width: 80px; text-align: center; }
